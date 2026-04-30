@@ -9,7 +9,7 @@ sentinel/
   __init__.py        — Package init, version
   models.py          — Data classes: JobPosting, ScamSignal, ValidationResult, CompanyProfile, ScamPattern
   scanner.py         — LinkedIn job scraping/ingestion: parse job pages, extract structured fields, batch import
-  signals.py         — Signal extraction: 40+ scam indicators (salary anomaly, vague description, fake company, ghost job, upfront payment, urgency pressure, email domain, recruiter history)
+  signals.py         — 26 signal extractors across 5 categories: red flags (upfront payment, SSN request, guaranteed income, crypto, no company, interview bypass, MLM, reshipping, data harvesting), warnings (salary anomaly, vague desc, no quals, urgency, WFH unrealistic, low recruiter connections, phone anomaly, compensation red flags, suspicious company name), ghost job (stale, repost), structural (grammar, links, AI-generated content), positive (established company, detailed requirements)
   analyzer.py        — Multi-tier AI analysis: fast regex/heuristic pass → Haiku classification → Sonnet deep analysis for ambiguous cases
   scorer.py          — Bayesian Beta-distribution scam scoring with Thompson Sampling, confidence intervals, per-signal weight learning
   validator.py       — Company validation: cross-reference against business registries, LinkedIn company pages, domain WHOIS, Glassdoor, employer databases
@@ -17,7 +17,9 @@ sentinel/
   flywheel.py        — Self-improving loop: INGEST → SCORE → VALIDATE → LEARN → EVOLVE. CUSUM regression detection, pattern lifecycle (discovery → validated → deprecated)
   api.py             — FastAPI REST API + browser extension backend: /analyze endpoint, /report endpoint, /feed endpoint
   web/               — React frontend: job analysis dashboard, browser extension popup, scam pattern explorer
-  cli.py             — CLI: analyze, scan, report, patterns, validate, stats, evolve, serve
+  ecosystem.py       — ctools integration: publish observations to engram, events to interop mesh, flywheel state to session-bridge
+  innovation.py      — Innovation flywheel: 8 Thompson Sampling strategies (FP/FN review, weight optimization, pattern mining, regression check, signal correlation, keyword expansion, threshold tuning)
+  cli.py             — CLI: analyze, validate, report, patterns, stats, evolve, innovate, ecosystem, init, serve
   db.py              — SQLite persistence with FTS5 search, WAL mode
   config.py          — TOML config loading
 ```
