@@ -2,22 +2,22 @@
 
 **AI-powered LinkedIn job scam detection and validation platform.**
 
-JobSentinel analyzes job postings for 40+ scam indicators using multi-signal analysis, Bayesian scoring, and a self-improving detection flywheel. It helps job seekers identify fake listings, ghost jobs, and recruitment fraud before they apply.
+JobSentinel analyzes job postings for 40+ scam indicators using multi-signal analysis and AI-powered classification. It helps job seekers identify fake listings, ghost jobs, and recruitment fraud before they apply.
 
 ## How It Works
 
 ```
-Job Posting → Signal Extraction (18 detectors) → Bayesian Scoring → Risk Classification
-                                                         ↓
-                                              AI Escalation (ambiguous cases)
-                                                         ↓
-                                              User Reports → Flywheel Learning
+Job Posting → Signal Extraction (26 detectors) → Risk Scoring → Classification
+                                                       ↓
+                                            AI Analysis (ambiguous cases)
+                                                       ↓
+                                            User Reports → Improved Accuracy
 ```
 
-**Three-tier detection:**
-1. **Fast pass** (<10ms) — Regex-based signal extraction catches obvious scams
-2. **Bayesian scoring** — Beta-distribution weighted combination with confidence intervals
-3. **AI escalation** — Claude analyzes ambiguous cases (0.3-0.7 score range)
+**Detection pipeline:**
+1. **Signal extraction** — Pattern-based detectors scan for 40+ scam indicators across 5 categories
+2. **Risk scoring** — Weighted signal combination produces a 0–1 scam probability score
+3. **AI escalation** — Claude analyzes ambiguous cases that fall in the mid-range
 
 ## Quick Start
 
@@ -33,24 +33,21 @@ sentinel analyze "We're hiring! No experience needed. Earn $5000/week guaranteed
 # Validate a company
 sentinel validate "Google"
 
-# Report a scam (feeds the learning flywheel)
+# Report a scam
 sentinel report "https://linkedin.com/jobs/view/123" --reason "Asked for SSN before interview"
 
 # View detection statistics
 sentinel stats
-
-# Run self-improvement cycle
-sentinel evolve
 ```
 
 ## Signal Categories
 
 | Category | Count | Examples |
 |----------|-------|---------|
-| Red Flags | 6 | Upfront payment, SSN request, guaranteed income, crypto payment |
-| Warnings | 6 | Salary anomaly, vague description, urgency language, no qualifications |
+| Red Flags | 9 | Upfront payment, SSN request, guaranteed income, crypto payment, MLM, reshipping |
+| Warnings | 9 | Salary anomaly, vague description, urgency language, no qualifications, phone anomaly |
 | Ghost Job | 2 | Stale posting (>30 days), repeat reposting |
-| Structural | 2 | Poor grammar/formatting, suspicious links (bit.ly, telegram) |
+| Structural | 3 | Poor grammar/formatting, suspicious links, AI-generated content detection |
 | Positive | 2 | Established company (1000+ employees), detailed requirements |
 
 ## Risk Levels
@@ -62,16 +59,6 @@ sentinel evolve
 | 0.4–0.6 | Suspicious | Review warnings before applying |
 | 0.6–0.8 | High | Strong scam indicators present |
 | 0.8–1.0 | Scam | Almost certainly fraudulent |
-
-## Self-Improving Flywheel
-
-JobSentinel gets smarter over time:
-
-1. **INGEST** — Analyze job postings, extract signals
-2. **SCORE** — Bayesian combination of weighted signals
-3. **VALIDATE** — Users confirm or deny predictions
-4. **LEARN** — Thompson Sampling updates signal weights based on accuracy
-5. **EVOLVE** — Promote effective patterns, deprecate unreliable ones, detect regression via CUSUM
 
 ## API Server
 
@@ -86,22 +73,21 @@ sentinel serve --port 8080
 | `/api/report` | POST | Submit scam/legitimate report |
 | `/api/patterns` | GET | List detection patterns |
 | `/api/stats` | GET | Detection statistics |
-| `/api/health` | GET | Service health + flywheel grade |
+| `/api/health` | GET | Service health check |
 
 ## Architecture
 
 ```
 sentinel/
 ├── models.py      — Data classes (JobPosting, ScamSignal, ValidationResult)
-├── signals.py     — 18 signal extractors across 5 categories
-├── scorer.py      — Bayesian Beta-distribution scoring + Thompson Sampling
-├── analyzer.py    — Multi-tier analysis pipeline (regex → AI)
+├── signals.py     — 26 signal extractors across 5 categories
+├── scorer.py      — Weighted signal scoring engine
+├── analyzer.py    — Multi-tier analysis pipeline (pattern matching → AI)
 ├── scanner.py     — Job posting parser (text, HTML, JSON)
 ├── validator.py   — Company validation (LinkedIn, WHOIS, known companies)
-├── knowledge.py   — Pattern knowledge base with 20 default scam patterns
-├── flywheel.py    — Self-improving detection loop + CUSUM regression
+├── knowledge.py   — Pattern knowledge base with 20+ default scam patterns
 ├── db.py          — SQLite + FTS5 persistence
-├── cli.py         — Click CLI (analyze, validate, report, patterns, stats, evolve)
+├── cli.py         — Click CLI (analyze, validate, report, patterns, stats)
 └── api.py         — FastAPI REST API
 ```
 
@@ -112,7 +98,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-96 tests covering signals, scoring, scanning, validation, persistence, and integration.
+154 tests covering signals, scoring, scanning, validation, persistence, and integration.
 
 ## Dependencies
 
