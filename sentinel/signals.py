@@ -481,6 +481,270 @@ def check_detailed_requirements(job: JobPosting) -> ScamSignal | None:
 
 
 # ---------------------------------------------------------------------------
+# AI-informed scam detection signals
+# ---------------------------------------------------------------------------
+
+_GENERIC_CULTURE = re.compile(
+    r"\b(dynamic team|fast.paced environment|passionate individuals?|"
+    r"results.driven|go-getter|self.starter|rockstar|ninja|guru|"
+    r"collaborative culture|inclusive workplace|family.like (team|culture)|"
+    r"work hard play hard|make a (difference|impact))\b",
+    re.IGNORECASE,
+)
+
+_SPECIFIC_DETAILS = re.compile(
+    r"\b(team [A-Z][a-z]+|project [A-Z][a-z]+|"
+    r"[A-Z][a-z]+ (squad|pod|team|org)|"
+    r"using [A-Z][a-zA-Z]+|built (on|with) [A-Z]|"
+    r"our (codebase|stack|platform|product|API|service))\b",
+)
+
+_PREMIUM_PHONE = re.compile(r"\b(900|976)[-.\s]?\d{3}[-.\s]?\d{4}\b")
+_PHONE_GENERAL = re.compile(
+    r"\b(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"
+)
+
+_INTERVIEW_BYPASS = re.compile(
+    r"\b(no interview (required|needed|necessary)|"
+    r"hired (on the spot|immediately|same day)|"
+    r"start (immediately|today|right away) no (questions?|interview)|"
+    r"no resume (required|needed|necessary)|"
+    r"no background (check|screening))\b",
+    re.IGNORECASE,
+)
+
+_MLM_LANGUAGE = re.compile(
+    r"\b(be your own boss|unlimited earning potential|residual income|"
+    r"network marketing|multi.?level marketing|mlm|"
+    r"downline|upline|recruit (others|people|friends)|"
+    r"financial freedom|work when you want|set your own (hours|schedule)|"
+    r"passive income opportunity)\b",
+    re.IGNORECASE,
+)
+
+_RESHIPPING = re.compile(
+    r"\b(receive (packages?|parcels?|shipments?)|"
+    r"reship(ping)?|re-ship(ping)?|forward (packages?|parcels?)|"
+    r"package (handler|inspector|coordinator) (from|at) home|"
+    r"quality control inspector (from|at) home|"
+    r"inspect (packages?|items?) (at|from) home)\b",
+    re.IGNORECASE,
+)
+
+_DATA_HARVESTING = re.compile(
+    r"\b(complete (our|the) (application|form|survey) (at|on|via)|"
+    r"fill out (our|the) (application|form) (at|on|via)|"
+    r"apply (at|via|through|on) (our )?(external|separate|outside)|"
+    r"submit (your )?(application|info|details) (at|to|via) (http|www|forms?\.|typeform|google))\b",
+    re.IGNORECASE,
+)
+
+_COMPENSATION_RED_FLAGS = re.compile(
+    r"\b(commission.only|100% commission|1099 only|"
+    r"independent contractor (only|position|role)|"
+    r"performance.based pay only|"
+    r"training (period|pay) (is )?unpaid|"
+    r"no base (salary|pay)|draw against commission)\b",
+    re.IGNORECASE,
+)
+
+_SUSPICIOUS_COMPANY_SUFFIX = re.compile(
+    r"\b(\w+\s+(Solutions|Global|International|Enterprises?|Worldwide|"
+    r"Unlimited|Ventures?|Associates?|Consulting|Services?|Group|Partners?))\s*$",
+    re.IGNORECASE,
+)
+
+
+def check_ai_generated_content(job: JobPosting) -> ScamSignal | None:
+    text = job.description
+    if len(text.split()) < 30:
+        return None
+
+    generic_hits = len(_GENERIC_CULTURE.findall(text))
+    specific_hits = len(_SPECIFIC_DETAILS.findall(text))
+    # Also count tech stack mentions as "specific"
+    specific_hits += len(_TECH_STACK.findall(text))
+    specific_hits += len(_EXPERIENCE_YRS.findall(text))
+
+    if generic_hits == 0:
+        return None
+    # Avoid division by zero; no specifics counts as worst-case ratio
+    ratio = generic_hits / max(specific_hits, 1)
+    if ratio <= 3.0:
+        return None
+
+    return ScamSignal(
+        name="ai_generated_content",
+        category=SignalCategory.STRUCTURAL,
+        weight=0.45,
+        confidence=0.55,
+        detail=(
+            f"Description has {generic_hits} generic culture phrase(s) but only "
+            f"{specific_hits} specific detail(s) — ratio {ratio:.1f}:1 suggests AI filler"
+        ),
+        evidence=f"{generic_hits} generic vs {specific_hits} specific",
+    )
+
+
+def check_phone_anomaly(job: JobPosting) -> ScamSignal | None:
+    text = _full_text(job)
+
+    premium = _PREMIUM_PHONE.search(text)
+    if premium:
+        return ScamSignal(
+            name="phone_anomaly",
+            category=SignalCategory.WARNING,
+            weight=0.5,
+            confidence=0.75,
+            detail="Premium-rate phone number detected (900/976 prefix)",
+            evidence=premium.group(0),
+        )
+
+    phone_match = _PHONE_GENERAL.search(text)
+    if phone_match:
+        return ScamSignal(
+            name="phone_anomaly",
+            category=SignalCategory.WARNING,
+            weight=0.5,
+            confidence=0.50,
+            detail="Phone number embedded in job description — unusual for LinkedIn postings",
+            evidence=phone_match.group(0),
+        )
+
+    return None
+
+
+def check_interview_bypass(job: JobPosting) -> ScamSignal | None:
+    m = _INTERVIEW_BYPASS.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="interview_bypass",
+        category=SignalCategory.RED_FLAG,
+        weight=0.75,
+        confidence=0.80,
+        detail="Posting explicitly skips standard hiring steps (interview, resume, background check)",
+        evidence=m.group(0),
+    )
+
+
+def check_mlm_language(job: JobPosting) -> ScamSignal | None:
+    m = _MLM_LANGUAGE.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="mlm_language",
+        category=SignalCategory.RED_FLAG,
+        weight=0.8,
+        confidence=0.82,
+        detail="Multi-level marketing / pyramid scheme language detected",
+        evidence=m.group(0),
+    )
+
+
+def check_reshipping_scam(job: JobPosting) -> ScamSignal | None:
+    m = _RESHIPPING.search(_full_text(job))
+    if not m:
+        return None
+    # Extra signal: "logistics coordinator" from home with no known logistics company
+    text = _full_text(job)
+    is_logistics_home = bool(
+        re.search(r"logistics coordinator", text, re.IGNORECASE)
+        and re.search(r"\b(from|at) home\b", text, re.IGNORECASE)
+        and not job.company_linkedin_url.strip()
+    )
+    evidence = m.group(0)
+    if is_logistics_home:
+        evidence += " (logistics coordinator from home, no company LinkedIn)"
+    return ScamSignal(
+        name="reshipping_scam",
+        category=SignalCategory.RED_FLAG,
+        weight=0.9,
+        confidence=0.85,
+        detail="Reshipping / package forwarding job — classic money-mule vector",
+        evidence=evidence,
+    )
+
+
+def check_data_harvesting(job: JobPosting) -> ScamSignal | None:
+    text = _full_text(job)
+    # Check explicit redirect language
+    m = _DATA_HARVESTING.search(text)
+    if m:
+        return ScamSignal(
+            name="data_harvesting",
+            category=SignalCategory.RED_FLAG,
+            weight=0.85,
+            confidence=0.78,
+            detail="Posting redirects applicants to an external form/site to collect personal data",
+            evidence=m.group(0),
+        )
+    # Also catch bare Google Forms / Typeform links without redirect phrasing
+    link_m = re.search(
+        r"(forms\.gle|docs\.google\.com/forms|typeform\.com|airtable\.com/shr)",
+        text,
+        re.IGNORECASE,
+    )
+    if link_m:
+        return ScamSignal(
+            name="data_harvesting",
+            category=SignalCategory.RED_FLAG,
+            weight=0.85,
+            confidence=0.70,
+            detail="External data-collection form linked in job description",
+            evidence=link_m.group(0),
+        )
+    return None
+
+
+def check_compensation_red_flags(job: JobPosting) -> ScamSignal | None:
+    m = _COMPENSATION_RED_FLAGS.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="compensation_red_flags",
+        category=SignalCategory.WARNING,
+        weight=0.55,
+        confidence=0.65,
+        detail="Compensation structure raises red flags (commission-only, unpaid training, 1099-only)",
+        evidence=m.group(0),
+    )
+
+
+def check_company_name_suspicious(job: JobPosting) -> ScamSignal | None:
+    name = (job.company or "").strip()
+    if not name:
+        return None
+
+    # All-caps company name
+    if name == name.upper() and len(name) > 3 and re.search(r"[A-Z]{4,}", name):
+        return ScamSignal(
+            name="company_name_suspicious",
+            category=SignalCategory.WARNING,
+            weight=0.5,
+            confidence=0.50,
+            detail="Company name is entirely uppercase — unusual for legitimate organisations",
+            evidence=name,
+        )
+
+    # Single-word + generic suffix pattern (e.g. "Horizon Solutions", "Apex Global")
+    m = _SUSPICIOUS_COMPANY_SUFFIX.match(name)
+    if m:
+        parts = name.split()
+        if len(parts) <= 3:
+            return ScamSignal(
+                name="company_name_suspicious",
+                category=SignalCategory.WARNING,
+                weight=0.5,
+                confidence=0.45,
+                detail="Company name matches common scam pattern (generic word + Solutions/Global/etc.)",
+                evidence=name,
+            )
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Registry + runner
 # ---------------------------------------------------------------------------
 
@@ -505,9 +769,18 @@ ALL_SIGNALS = [
     # Structural
     check_grammar_quality,
     check_suspicious_links,
+    check_ai_generated_content,
     # Positive
     check_established_company,
     check_detailed_requirements,
+    # AI-informed scam detection
+    check_phone_anomaly,
+    check_interview_bypass,
+    check_mlm_language,
+    check_reshipping_scam,
+    check_data_harvesting,
+    check_compensation_red_flags,
+    check_company_name_suspicious,
 ]
 
 

@@ -616,3 +616,55 @@ def serve(port: int, host: str, reload: bool) -> None:
         factory=True,
         log_level="info",
     )
+
+
+@main.command()
+@click.option("--strategies", default=3, help="Max strategies per cycle")
+@click.pass_context
+def innovate(ctx, strategies):
+    """Run the innovation flywheel — autonomous self-improvement cycle."""
+    from sentinel.innovation import InnovationEngine
+
+    engine = InnovationEngine()
+    results = engine.run_cycle(max_strategies=strategies)
+
+    if ctx.obj.get("json"):
+        click.echo(json.dumps([{
+            "strategy": r.strategy,
+            "success": r.success,
+            "detail": r.detail,
+        } for r in results], indent=2))
+    else:
+        click.echo(click.style("Innovation Cycle Complete\n", bold=True))
+        for r in results:
+            icon = click.style("++", fg="green") if r.success else click.style("--", fg="red")
+            click.echo(f"  {icon} {r.strategy}: {r.detail}")
+
+        # Show strategy rankings
+        rankings = engine.get_strategy_rankings()
+        click.echo(click.style("\nStrategy Rankings (Thompson Sampling):", bold=True))
+        for s in rankings[:5]:
+            bar = "#" * int(s["mean"] * 20)
+            click.echo(f"  {s['mean']:.2f} [{bar:20s}] {s['name']} ({s['attempts']} runs)")
+
+
+@main.command()
+@click.pass_context
+def ecosystem(ctx):
+    """Show ecosystem integration status."""
+    from sentinel.ecosystem import read_ecosystem_context
+
+    context = read_ecosystem_context()
+    if ctx.obj.get("json"):
+        click.echo(json.dumps(context, indent=2, default=str))
+    else:
+        click.echo(click.style("Ecosystem Integration\n", bold=True))
+        if context.get("session_briefing"):
+            click.echo(f"  Session Bridge: {click.style('connected', fg='green')}")
+        else:
+            click.echo(f"  Session Bridge: {click.style('no briefing', fg='yellow')}")
+        patterns = context.get("engram_patterns", [])
+        if patterns:
+            click.echo(f"  Engram: {click.style(f'{len(patterns)} patterns', fg='green')}")
+        else:
+            click.echo(f"  Engram: {click.style('not connected', fg='yellow')}")
