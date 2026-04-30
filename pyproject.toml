@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinel"
+version = "0.1.0"
+description = "sentinel — security tool"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    {name = "Eric Rihm", email = "eric@cobaltsystems.io"},
+]
+dependencies = [
+"click>=8.1",
+
+]
+
+[project.optional-dependencies]
+dev = [
+    "mutmut>=3.0",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+
+
+[project.scripts]
+sentinel = "sentinel.cli:main"
+
+
+[tool.setuptools.packages.find]
+include = ["sentinel*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["sentinel"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+
+[tool.mutmut]
+source_paths = ["sentinel/"]
+pytest_add_cli_args_test_selection = ["tests/"]

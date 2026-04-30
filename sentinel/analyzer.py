@@ -1,0 +1,224 @@
+"""Multi-tier AI analysis for job postings."""
+
+import time
+from typing import Optional
+
+from sentinel.models import JobPosting, ScamSignal, SignalCategory, ValidationResult, RiskLevel
+from sentinel.signals import extract_signals
+from sentinel.scorer import score_signals, classify_risk, build_result
+
+try:
+    import anthropic as _anthropic
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    _ANTHROPIC_AVAILABLE = False
+
+_AMBIGUOUS_LOW = 0.3
+_AMBIGUOUS_HIGH = 0.7
+
+_HAIKU_MODEL = "claude-haiku-4-5"
+_SONNET_MODEL = "claude-sonnet-4-6"
+
+_SYSTEM_PROMPT = (
+    "You are an expert at detecting fraudulent and scam job postings on LinkedIn. "
+    "Analyze the provided job posting and assess whether it is a scam. "
+    "Focus on: payment requests, unrealistic compensation, vague descriptions, "
+    "suspicious contact methods, fake company indicators, and high-pressure tactics. "
+    "Be concise and structured."
+)
+
+
+def analyze_job(job: JobPosting, use_ai: bool = True) -> ValidationResult:
+    """Full analysis pipeline:
+    1. Extract signals (fast regex/heuristic, <10ms)
+    2. Score and classify
+    3. If score is ambiguous (0.3-0.7) and use_ai=True, escalate to AI tier
+    4. Return complete ValidationResult
+    """
+    start_ms = time.monotonic() * 1000
+
+    signals = extract_signals(job)
+    score, confidence = score_signals(signals)
+    risk = classify_risk(score)
+    result = build_result(job, signals)
+    result.scam_score = score
+    result.confidence = confidence
+    result.risk_level = risk
+
+    if use_ai and _AMBIGUOUS_LOW <= score <= _AMBIGUOUS_HIGH:
+        ai_text, tier = _escalate_to_ai(job, signals, score)
+        result.ai_analysis = ai_text
+        result.ai_tier_used = tier
+
+    result.analysis_time_ms = (time.monotonic() * 1000) - start_ms
+    return result
+
+
+def analyze_text(text: str, title: str = "", company: str = "") -> ValidationResult:
+    """Convenience: analyze from raw text (creates JobPosting internally)."""
+    job = JobPosting(
+        description=text,
+        title=title,
+        company=company,
+        source="text",
+    )
+    return analyze_job(job)
+
+
+def analyze_url(url: str) -> ValidationResult:
+    """Analyze a LinkedIn job URL (requires scanner module for parsing)."""
+    try:
+        from sentinel.scanner import parse_job_url
+        job = parse_job_url(url)
+    except (ImportError, Exception):
+        job = JobPosting(url=url, source="linkedin")
+
+    return analyze_job(job)
+
+
+def _escalate_to_ai(
+    job: JobPosting,
+    signals: list[ScamSignal],
+    current_score: float,
+) -> tuple[str, str]:
+    """Call Claude API for deeper analysis on ambiguous postings.
+
+    Returns (ai_analysis_text, tier_used).
+    Tier selection:
+    - Try haiku first (fast, cheap)
+    - If still ambiguous, escalate to sonnet
+    Falls back gracefully if anthropic not installed.
+    """
+    if not _ANTHROPIC_AVAILABLE:
+        return ("", "none")
+
+    signal_summary = "; ".join(
+        f"{s.name} ({s.category.value})" for s in signals[:10]
+    )
+
+    posting_text = (
+        f"Title: {job.title}\n"
+        f"Company: {job.company}\n"
+        f"Location: {job.location}\n"
+        f"Salary: {job.salary_min}-{job.salary_max} {job.salary_currency}\n"
+        f"Employment type: {job.employment_type}\n"
+        f"Experience level: {job.experience_level}\n"
+        f"Description:\n{job.description[:3000]}\n\n"
+        f"Detected signals: {signal_summary}\n"
+        f"Current heuristic score: {current_score:.2f} (0=safe, 1=scam)"
+    )
+
+    user_message = (
+        f"Analyze this job posting and determine if it is a scam or legitimate.\n\n"
+        f"{posting_text}\n\n"
+        f"Provide: (1) scam likelihood assessment, (2) key red flags or legitimacy "
+        f"indicators you observe, (3) overall recommendation (safe/suspicious/scam)."
+    )
+
+    client = _anthropic.Anthropic()
+
+    # Tier 1: Haiku (fast, cheap)
+    try:
+        response = client.messages.create(
+            model=_HAIKU_MODEL,
+            max_tokens=512,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        analysis = next(
+            (b.text for b in response.content if b.type == "text"), ""
+        )
+        if analysis:
+            return (analysis, _HAIKU_MODEL)
+    except Exception:
+        pass
+
+    # Tier 2: Sonnet (deeper analysis for persistent ambiguity)
+    try:
+        response = client.messages.create(
+            model=_SONNET_MODEL,
+            max_tokens=1024,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        analysis = next(
+            (b.text for b in response.content if b.type == "text"), ""
+        )
+        if analysis:
+            return (analysis, _SONNET_MODEL)
+    except Exception:
+        pass
+
+    return ("", "failed")
+
+
+def batch_analyze(
+    jobs: list[JobPosting],
+    use_ai: bool = False,
+) -> list[ValidationResult]:
+    """Analyze multiple postings. AI disabled by default for batch to save cost."""
+    return [analyze_job(job, use_ai=use_ai) for job in jobs]
+
+
+def format_result_text(result: ValidationResult) -> str:
+    """Human-readable analysis output with risk indicators."""
+    lines: list[str] = []
+
+    risk_icons = {
+        RiskLevel.SAFE: "[SAFE]",
+        RiskLevel.LOW: "[LOW]",
+        RiskLevel.SUSPICIOUS: "[SUSPICIOUS]",
+        RiskLevel.HIGH: "[HIGH RISK]",
+        RiskLevel.SCAM: "[SCAM]",
+    }
+    icon = risk_icons.get(result.risk_level, "[UNKNOWN]")
+
+    lines.append(f"{icon} {result.risk_label()}")
+    lines.append(f"Scam score: {result.scam_score:.0%}  |  Confidence: {result.confidence:.0%}")
+    lines.append(f"Analysis time: {result.analysis_time_ms:.1f}ms")
+
+    job = result.job
+    if job.title or job.company:
+        lines.append("")
+        if job.title:
+            lines.append(f"Job:     {job.title}")
+        if job.company:
+            lines.append(f"Company: {job.company}")
+        if job.url:
+            lines.append(f"URL:     {job.url}")
+
+    if result.red_flags:
+        lines.append("")
+        lines.append(f"Red flags ({len(result.red_flags)}):")
+        for s in result.red_flags:
+            detail = f" — {s.detail}" if s.detail else ""
+            lines.append(f"  ! {s.name}{detail}")
+
+    if result.warnings:
+        lines.append("")
+        lines.append(f"Warnings ({len(result.warnings)}):")
+        for s in result.warnings:
+            detail = f" — {s.detail}" if s.detail else ""
+            lines.append(f"  ~ {s.name}{detail}")
+
+    if result.ghost_indicators:
+        lines.append("")
+        lines.append(f"Ghost job indicators ({len(result.ghost_indicators)}):")
+        for s in result.ghost_indicators:
+            detail = f" — {s.detail}" if s.detail else ""
+            lines.append(f"  ? {s.name}{detail}")
+
+    if result.positive_signals:
+        lines.append("")
+        lines.append(f"Positive signals ({len(result.positive_signals)}):")
+        for s in result.positive_signals:
+            detail = f" — {s.detail}" if s.detail else ""
+            lines.append(f"  + {s.name}{detail}")
+
+    if result.ai_analysis:
+        lines.append("")
+        lines.append(f"AI analysis ({result.ai_tier_used}):")
+        for line in result.ai_analysis.strip().splitlines():
+            lines.append(f"  {line}")
+
+    return "\n".join(lines)
