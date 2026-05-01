@@ -18,6 +18,7 @@ import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sentinel.db import SentinelDB
@@ -213,6 +214,24 @@ class InnovationEngine:
         if signal_fp_counts:
             worst = max(signal_fp_counts, key=signal_fp_counts.get)
             count = signal_fp_counts[worst]
+
+            # Actually reduce the pattern's alpha by 10% to downweight it
+            row = self.db.conn.execute(
+                "SELECT * FROM patterns WHERE name = ? OR pattern_id = ?",
+                (worst, worst),
+            ).fetchone()
+            if row:
+                pattern = dict(row)
+                old_alpha = pattern.get("alpha", 1.0)
+                new_alpha = round(old_alpha * 0.9, 6)
+                pattern["alpha"] = new_alpha
+                self.db.save_pattern(pattern)
+                return ImprovementResult(
+                    "false_positive_review", True,
+                    f"Signal '{worst}' caused {count} false positives — alpha reduced from {old_alpha:.4f} to {new_alpha:.4f}",
+                    new_patterns=0, deprecated_patterns=0,
+                )
+
             return ImprovementResult(
                 "false_positive_review", True,
                 f"Signal '{worst}' caused {count} false positives — weight reduced",

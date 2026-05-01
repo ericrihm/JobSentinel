@@ -17,11 +17,26 @@ except ImportError:  # pragma: no cover
 
 from sentinel.models import JobPosting
 from sentinel.scanner import _strip_html
+from sentinel.throttle import SmartThrottler
 
 logger = logging.getLogger(__name__)
 
 _USER_AGENT = "Sentinel/0.1 (job-scam-detection)"
 _TIMEOUT = 15.0
+
+# ---------------------------------------------------------------------------
+# Module-level throttler (lazy singleton)
+# ---------------------------------------------------------------------------
+
+_throttler: SmartThrottler | None = None
+
+
+def get_throttler() -> SmartThrottler:
+    """Return the module-level SmartThrottler, creating it on first call."""
+    global _throttler
+    if _throttler is None:
+        _throttler = SmartThrottler()
+    return _throttler
 
 
 # ---------------------------------------------------------------------------
@@ -55,16 +70,21 @@ class RemoteOKSource(JobSource):
         return "remoteok"
 
     def fetch(self, query: str = "", location: str = "", limit: int = 25) -> list[JobPosting]:
+        url = "https://remoteok.com/api"
+        throttler = get_throttler()
+        if not throttler.wait_if_needed(url):
+            logger.warning("Circuit broken for %s, skipping", url)
+            return []
+        resp = None
         try:
             with httpx.Client(timeout=_TIMEOUT) as client:
-                resp = client.get(
-                    "https://remoteok.com/api",
-                    headers={"User-Agent": _USER_AGENT},
-                )
+                resp = client.get(url, headers={"User-Agent": _USER_AGENT})
                 resp.raise_for_status()
                 data = resp.json()
+            throttler.record_success(url)
         except Exception:
             logger.exception("RemoteOK fetch failed")
+            throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
             return []
 
         # The first element is usually a metadata/legal notice dict -- skip it
@@ -157,14 +177,21 @@ class AdzunaSource(JobSource):
         if location:
             params["where"] = location
 
+        url = f"https://api.adzuna.com/v1/api/jobs/{self._country}/search/1"
+        throttler = get_throttler()
+        if not throttler.wait_if_needed(url):
+            logger.warning("Circuit broken for %s, skipping", url)
+            return []
+        resp = None
         try:
-            url = f"https://api.adzuna.com/v1/api/jobs/{self._country}/search/1"
             with httpx.Client(timeout=_TIMEOUT) as client:
                 resp = client.get(url, params=params, headers={"User-Agent": _USER_AGENT})
                 resp.raise_for_status()
                 data = resp.json()
+            throttler.record_success(url)
         except Exception:
             logger.exception("Adzuna fetch failed")
+            throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
             return []
 
         results = data.get("results", [])

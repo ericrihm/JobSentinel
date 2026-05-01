@@ -400,3 +400,109 @@ class TestDetectionFlywheel:
         fw = DetectionFlywheel(db=flywheel_db)
         result = fw.evolve_patterns()
         assert "test_low_precision" in result["deprecated"]
+
+
+# ===========================================================================
+# TestRegressionResponse — regression detection loop closure
+# ===========================================================================
+
+
+class TestRegressionResponse:
+    """Tests for the CUSUM regression response: cache reset, callbacks, alerts."""
+
+    def _seed_regression_reports(self, db, count=30):
+        """Insert reports that will trigger a CUSUM regression alarm.
+
+        Creates reports where is_scam=1 but was_correct=0 (false negatives),
+        which drives rolling precision to 0 and accumulates the CUSUM statistic.
+        Also seeds a few initial correct reports to establish a nonzero baseline.
+        """
+        from datetime import datetime, UTC, timedelta
+
+        base_time = datetime(2026, 1, 1, tzinfo=UTC)
+
+        # First: a few correct predictions to set a nonzero CUSUM baseline
+        for i in range(5):
+            db.save_report({
+                "url": f"https://example.com/job/good-{i}",
+                "is_scam": 1,
+                "was_correct": 1,
+                "reported_at": (base_time + timedelta(hours=i)).isoformat(),
+            })
+
+        # Then: many incorrect predictions to trigger regression
+        for i in range(count):
+            db.save_report({
+                "url": f"https://example.com/job/bad-{i}",
+                "is_scam": 1,
+                "was_correct": 0,
+                "reported_at": (base_time + timedelta(hours=10 + i)).isoformat(),
+            })
+
+    def test_regression_triggers_cache_reset(self, flywheel_db):
+        """When CUSUM detects regression, _reset_learned_weights_cache must be called."""
+        from unittest.mock import patch
+
+        self._seed_regression_reports(flywheel_db, count=40)
+        fw = DetectionFlywheel(db=flywheel_db)
+
+        with patch("sentinel.scorer._reset_learned_weights_cache") as mock_reset:
+            metrics = fw.run_cycle()
+
+        assert metrics["regression_alarm"] is True
+        # Called at least twice: once from evolve_patterns() inside run_cycle,
+        # and once explicitly from the regression response block.
+        # evolve_patterns is called twice when regression fires (initial + re-run),
+        # plus the explicit call = at least 3 times.
+        assert mock_reset.call_count >= 2, (
+            f"Expected _reset_learned_weights_cache to be called at least 2 times, "
+            f"got {mock_reset.call_count}"
+        )
+
+    def test_regression_alert_callback_fired(self, flywheel_db):
+        """A registered callback should receive the metrics dict on regression."""
+        from unittest.mock import MagicMock, patch
+
+        self._seed_regression_reports(flywheel_db, count=40)
+        fw = DetectionFlywheel(db=flywheel_db)
+
+        mock_callback = MagicMock()
+        fw.on_regression(mock_callback)
+
+        with patch("sentinel.scorer._reset_learned_weights_cache"):
+            metrics = fw.run_cycle()
+
+        assert metrics["regression_alarm"] is True
+        mock_callback.assert_called_once_with(metrics)
+        # Verify the callback received a dict with the expected keys
+        received = mock_callback.call_args[0][0]
+        assert "precision" in received
+        assert "cusum_statistic" in received
+        assert "regression_alarm" in received
+
+    def test_evolve_resets_weight_cache(self, flywheel_db):
+        """evolve_patterns() should call _reset_learned_weights_cache."""
+        from unittest.mock import patch
+
+        fw = DetectionFlywheel(db=flywheel_db)
+
+        with patch("sentinel.scorer._reset_learned_weights_cache") as mock_reset:
+            fw.evolve_patterns()
+
+        mock_reset.assert_called_once()
+
+    def test_no_regression_no_callback(self, flywheel_db):
+        """When no regression is detected, alert callbacks should not fire."""
+        from unittest.mock import MagicMock, patch
+
+        # Fresh DB with no reports = no regression
+        fw = DetectionFlywheel(db=flywheel_db)
+
+        mock_callback = MagicMock()
+        fw.on_regression(mock_callback)
+
+        with patch("sentinel.scorer._reset_learned_weights_cache"):
+            metrics = fw.run_cycle()
+
+        assert metrics["regression_alarm"] is False
+        mock_callback.assert_not_called()
