@@ -9,7 +9,7 @@
  *   Then call window.sentinelAnalyze(text) from any inline script.
  */
 
-import { extractSignals } from './signals-engine.js';
+import { extractSignals } from './signals-engine.js?v=cf95ce8';
 
 /**
  * Build a minimal JobPosting-like object from raw text input.
