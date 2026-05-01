@@ -244,11 +244,19 @@ def check_no_company_presence(job: JobPosting) -> ScamSignal | None:
             evidence="company field is empty",
         )
     if not job.company_linkedin_url.strip():
+        try:
+            from sentinel.company_verifier import CompanyVerifier
+            cv = CompanyVerifier()
+            existence = cv.check_company_exists(job.company)
+            if existence.get("is_known"):
+                return None
+        except ImportError:
+            pass
         return ScamSignal(
             name="no_company_presence",
-            category=SignalCategory.RED_FLAG,
-            weight=0.70,
-            confidence=0.65,
+            category=SignalCategory.WARNING,
+            weight=0.45,
+            confidence=0.50,
             detail="No company LinkedIn page linked",
             evidence="company_linkedin_url is empty",
         )
@@ -397,14 +405,14 @@ def check_salary_anomaly(job: JobPosting) -> ScamSignal | None:
 
 def check_vague_description(job: JobPosting) -> ScamSignal | None:
     words = job.description.split()
-    if len(words) >= 30:
+    if len(words) >= 20:
         return None
-    weight = 0.65 if len(words) < 10 else 0.50
+    weight = 0.50 if len(words) < 8 else 0.35
     return ScamSignal(
         name="vague_description",
         category=SignalCategory.WARNING,
         weight=weight,
-        confidence=0.70,
+        confidence=0.60,
         detail=f"Job description is extremely sparse ({len(words)} words)",
         evidence=job.description[:120],
     )

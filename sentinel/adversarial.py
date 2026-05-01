@@ -195,7 +195,7 @@ class TextNormalizer:
         # Step A: any run of 3+ identical letters -> max 2 (safe for all English)
         text = re.sub(r'([a-zA-Z])\1{2,}', r'\1\1', text)
         # Step B: collapse doubles of letters that almost never double in English
-        text = re.sub(r'([ahijkquvwxyAHIJKQUVWXY])\1', r'\1', text)
+        text = re.sub(r'([ahijkquvwxyAHJKQUVWXY])\1', r'\1', text)
 
         # 8. Collapse repeated whitespace
         text = re.sub(r"  +", " ", text)
@@ -211,14 +211,23 @@ class TextNormalizer:
         """Replace leet characters with their letter equivalents.
 
         We apply per-token expansion so that legitimate numbers like "3 years"
-        are not corrupted while "b1tc0in" → "bitcoin".  A token that is purely
-        numeric (e.g. "2024") is left unchanged.
+        are not corrupted while "b1tc0in" → "bitcoin".  Tokens that look like
+        numbers, currency amounts, or alphanumeric codes are left unchanged.
         """
+        _NUMERIC_TOKEN = re.compile(
+            r"^[\$€£¥]?[\d,.]+[kKmMbB%+\-]?"      # $150k, 401k, $200k, 5+, 3.5%
+            r"(?:[\-/][\$€£¥]?[\d,.]+[kKmMbB%]*)*$" # compound: $150k-$200k
+            r"|^\d+[a-zA-Z]{0,2}$"                    # 401k, 2024, 5th
+            r"|^\d+\([a-zA-Z]\)$"                   # 401(k)
+            r"|^[A-Z][+#]{1,2}$"                       # C++, C#
+        )
         tokens = text.split(" ")
         result = []
         for token in tokens:
-            # Keep purely numeric tokens (dates, years, salaries) intact
-            if token.isdigit():
+            stripped = token.strip(".,;:!?\"'()[]{}")
+            if not stripped or _NUMERIC_TOKEN.match(stripped) or _NUMERIC_TOKEN.match(token):
+                result.append(token)
+            elif sum(c.isalpha() for c in stripped) == 0:
                 result.append(token)
             else:
                 result.append(token.translate(_LEET_TABLE))
@@ -471,14 +480,16 @@ class EvasionDetector:
 
     @staticmethod
     def _significant_delta(original: str, normalized: str) -> bool:
-        """Return True if normalization changed more than 1% of characters."""
-        if not original:
+        """Return True if normalization changed a significant fraction of words."""
+        if not original or original == normalized:
             return False
-        changed = sum(1 for a, b in zip(original, normalized, strict=False) if a != b)
-        # Also count length difference (invisible chars were removed)
-        length_diff = abs(len(original) - len(normalized))
-        total_changes = changed + length_diff
-        return total_changes / max(len(original), 1) > 0.01
+        orig_words = original.split()
+        norm_words = normalized.split()
+        if not orig_words:
+            return False
+        changed = sum(1 for a, b in zip(orig_words, norm_words) if a != b)
+        changed += abs(len(orig_words) - len(norm_words))
+        return changed / len(orig_words) > 0.10
 
     @staticmethod
     def _find_hidden_content(original: str, normalized: str) -> str:

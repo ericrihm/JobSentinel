@@ -185,25 +185,30 @@ def _normalize_for_compare(text: str) -> str:
 
 def _domain_matches_company(company_name: str, domain: str) -> bool:
     """Return True if domain reasonably matches company name (fuzzy)."""
-    # Strip TLD(s) and www from domain
-    domain_stripped = re.sub(r"^www\.", "", domain.lower())
-    domain_base = re.sub(r"\.[a-z]{2,}$", "", domain_stripped)
-    # Remove any remaining TLD portion (e.g. .co.uk)
-    domain_base = re.sub(r"\.[a-z]{2,}$", "", domain_base)
-
     cn = _normalize_for_compare(company_name)
-    db = _normalize_for_compare(domain_base)
+    domain_lower = domain.lower().lstrip("www.")
 
-    if not cn or not db:
+    if not cn or not domain_lower:
         return False
 
-    # Exact contains match
-    if cn in db or db in cn:
+    # Check if company name appears anywhere in the full domain
+    domain_flat = _normalize_for_compare(domain_lower)
+    if cn in domain_flat or domain_flat in cn:
         return True
 
-    # Fuzzy ratio
-    ratio = SequenceMatcher(None, cn, db).ratio()
-    return ratio >= 0.70
+    # Check each subdomain/domain part individually
+    parts = domain_lower.replace(".", " ").split()
+    for part in parts:
+        dp = _normalize_for_compare(part)
+        if not dp or len(dp) < 3:
+            continue
+        if cn in dp or dp in cn:
+            return True
+        ratio = SequenceMatcher(None, cn, dp).ratio()
+        if ratio >= 0.70:
+            return True
+
+    return False
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -628,13 +633,22 @@ class CompanyVerifier:
 
         return profile
 
+    _JOB_BOARD_DOMAINS = {
+        "linkedin.com", "indeed.com", "glassdoor.com", "ziprecruiter.com",
+        "monster.com", "dice.com", "lever.co", "greenhouse.io",
+        "workday.com", "adp.com", "micronapps.com", "smartrecruiters.com",
+        "icims.com", "taleo.net", "brassring.com", "ultipro.com",
+        "myworkdayjobs.com", "jobvite.com", "applytojob.com",
+    }
+
     def _infer_company_url(self, company_name: str, job: JobPosting) -> str:
         """Try to find a URL from job posting fields or infer from company name."""
-        # Check job URL itself
-        if job.url and "linkedin.com" not in job.url.lower():
-            return job.url
+        if job.url:
+            url_lower = job.url.lower()
+            is_job_board = any(jb in url_lower for jb in self._JOB_BOARD_DOMAINS)
+            if not is_job_board:
+                return job.url
 
-        # Build a guessed domain from company name
         slug = re.sub(r"[^a-z0-9]", "", company_name.lower())
         if slug:
             return f"https://{slug}.com"
@@ -710,8 +724,9 @@ class CompanyVerifier:
             except Exception:
                 logger.debug("Domain verification failed for %r", company_name, exc_info=True)
 
+        has_linkedin = bool((getattr(job, "company_linkedin_url", "") or "").strip())
         if domain_result:
-            if not domain_result.get("resolves", True):
+            if not domain_result.get("resolves", True) and not has_linkedin:
                 signals.append(ScamSignal(
                     name="company_not_found",
                     category=SignalCategory.RED_FLAG,
@@ -722,17 +737,19 @@ class CompanyVerifier:
                 ))
 
             if domain_result.get("resolves") and not domain_result.get("name_matches_domain"):
-                signals.append(ScamSignal(
-                    name="company_domain_mismatch",
-                    category=SignalCategory.WARNING,
-                    weight=0.65,
-                    confidence=0.60,
-                    detail=(
-                        f"Company name '{company_name}' does not match "
-                        f"domain '{domain_result.get('domain', '')}'"
-                    ),
-                    evidence=f"name={company_name}, domain={domain_result.get('domain', '')}",
-                ))
+                existence = self.check_company_exists(company_name)
+                if not existence.get("is_known"):
+                    signals.append(ScamSignal(
+                        name="company_domain_mismatch",
+                        category=SignalCategory.WARNING,
+                        weight=0.50,
+                        confidence=0.50,
+                        detail=(
+                            f"Company name '{company_name}' does not match "
+                            f"domain '{domain_result.get('domain', '')}'"
+                        ),
+                        evidence=f"name={company_name}, domain={domain_result.get('domain', '')}",
+                    ))
 
         # --- Address check ---
         if job.location:
