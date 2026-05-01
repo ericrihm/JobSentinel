@@ -82,7 +82,14 @@ CREATE TABLE IF NOT EXISTS flywheel_metrics (
     precision REAL DEFAULT 0.0,
     recall REAL DEFAULT 0.0,
     signals_updated INTEGER DEFAULT 0,
-    patterns_evolved INTEGER DEFAULT 0
+    patterns_evolved INTEGER DEFAULT 0,
+    f1 REAL DEFAULT 0.0,
+    accuracy REAL DEFAULT 0.0,
+    cycle_number INTEGER DEFAULT 0,
+    regression_alarm INTEGER DEFAULT 0,
+    cusum_statistic REAL DEFAULT 0.0,
+    patterns_promoted INTEGER DEFAULT 0,
+    patterns_deprecated INTEGER DEFAULT 0
 );
 """
 
@@ -99,13 +106,33 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
 
 class SentinelDB:
     def __init__(self, path: str = "") -> None:
-        self.path = path or DEFAULT_DB_PATH
+        if path:
+            self.path = path
+        else:
+            from sentinel.config import get_config
+            self.path = get_config().db_path
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        self.conn.commit()
+
+        # Migrate existing DBs
+        for col_sql in [
+            "ALTER TABLE flywheel_metrics ADD COLUMN f1 REAL DEFAULT 0.0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN accuracy REAL DEFAULT 0.0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN cycle_number INTEGER DEFAULT 0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN regression_alarm INTEGER DEFAULT 0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN cusum_statistic REAL DEFAULT 0.0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN patterns_promoted INTEGER DEFAULT 0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN patterns_deprecated INTEGER DEFAULT 0",
+        ]:
+            try:
+                self.conn.execute(col_sql)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         self.conn.commit()
 
     # ------------------------------------------------------------------
@@ -388,14 +415,26 @@ class SentinelDB:
 
     def save_flywheel_metrics(self, metrics: dict) -> None:
         """Append a flywheel cycle snapshot."""
+        # patterns_promoted / patterns_deprecated may be lists (evolution result)
+        promoted = metrics.get("patterns_promoted", 0)
+        deprecated = metrics.get("patterns_deprecated", 0)
+        if isinstance(promoted, list):
+            promoted = len(promoted)
+        if isinstance(deprecated, list):
+            deprecated = len(deprecated)
+
         self.conn.execute(
             """
             INSERT INTO flywheel_metrics
                 (cycle_ts, total_analyzed, true_positives, false_positives,
-                 precision, recall, signals_updated, patterns_evolved)
+                 precision, recall, signals_updated, patterns_evolved,
+                 f1, accuracy, cycle_number, regression_alarm,
+                 cusum_statistic, patterns_promoted, patterns_deprecated)
             VALUES
                 (:cycle_ts, :total_analyzed, :true_positives, :false_positives,
-                 :precision, :recall, :signals_updated, :patterns_evolved)
+                 :precision, :recall, :signals_updated, :patterns_evolved,
+                 :f1, :accuracy, :cycle_number, :regression_alarm,
+                 :cusum_statistic, :patterns_promoted, :patterns_deprecated)
             """,
             {
                 "cycle_ts": metrics.get("cycle_ts", _now_iso()),
@@ -406,6 +445,13 @@ class SentinelDB:
                 "recall": metrics.get("recall", 0.0),
                 "signals_updated": metrics.get("signals_updated", 0),
                 "patterns_evolved": metrics.get("patterns_evolved", 0),
+                "f1": metrics.get("f1", 0.0),
+                "accuracy": metrics.get("accuracy", 0.0),
+                "cycle_number": metrics.get("cycle_number", 0),
+                "regression_alarm": int(bool(metrics.get("regression_alarm", False))),
+                "cusum_statistic": metrics.get("cusum_statistic", 0.0),
+                "patterns_promoted": promoted,
+                "patterns_deprecated": deprecated,
             },
         )
         self.conn.commit()

@@ -1,10 +1,57 @@
 """Company validation — cross-reference companies against external sources."""
 
+import re
 import socket
 import subprocess
 from datetime import datetime, timezone
 
+# Safe domain pattern: standard hostname labels, no shell metacharacters.
+_SAFE_DOMAIN_RE = re.compile(
+    r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$'
+)
+
 from sentinel.models import CompanyProfile
+
+# Cache TTL: number of days before a cached company profile is considered stale.
+CACHE_TTL_DAYS = 7
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as an ISO 8601 string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _is_cache_fresh(last_checked: str) -> bool:
+    """Return True if last_checked is within CACHE_TTL_DAYS of now.
+
+    Returns False for any empty/unparseable value so the caller falls through
+    to a fresh validation.
+    """
+    if not last_checked:
+        return False
+    try:
+        ts = datetime.fromisoformat(last_checked)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_days = (datetime.now(timezone.utc) - ts).days
+        return age_days < CACHE_TTL_DAYS
+    except (ValueError, TypeError):
+        return False
+
+
+def _cached_to_profile(cached: dict) -> CompanyProfile:
+    """Convert a DB company row (dict) to a CompanyProfile."""
+    return CompanyProfile(
+        name=cached.get("name", ""),
+        domain=cached.get("domain", ""),
+        employee_count=cached.get("employee_count", 0) or 0,
+        is_verified=bool(cached.get("is_verified", False)),
+        linkedin_url=cached.get("linkedin_url", "") or "",
+        glassdoor_rating=cached.get("glassdoor_rating", 0.0) or 0.0,
+        whois_age_days=cached.get("whois_age_days", 0) or 0,
+        has_linkedin_page=bool(cached.get("linkedin_url", "")),
+        verification_source="cache",
+    )
 
 try:
     import httpx as _httpx
@@ -119,6 +166,9 @@ def check_domain_age(domain: str) -> int:
     """
     domain = domain.strip().lower().removeprefix("www.")
     if not domain:
+        return 0
+
+    if not _SAFE_DOMAIN_RE.match(domain):
         return 0
 
     try:

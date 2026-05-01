@@ -21,7 +21,7 @@ def create_app():  # noqa: C901
     try:
         from fastapi import FastAPI, HTTPException, Query
         from fastapi.middleware.cors import CORSMiddleware
-        from pydantic import BaseModel, Field
+        from pydantic import BaseModel, Field, field_validator
     except ImportError:
         raise ImportError(
             "FastAPI and Uvicorn are required for the API server.\n"
@@ -34,17 +34,24 @@ def create_app():  # noqa: C901
 
     class AnalyzeRequest(BaseModel):
         """Payload for POST /api/analyze.  Provide one of: text, url, or job_data."""
-        text: Optional[str] = Field(None, description="Raw job description text.")
-        url: Optional[str] = Field(None, description="LinkedIn job posting URL.")
+        text: Optional[str] = Field(None, max_length=50000, description="Raw job description text.")
+        url: Optional[str] = Field(None, max_length=2048, description="LinkedIn job posting URL.")
         job_data: Optional[dict] = Field(None, description="Structured job dict (JSON).")
-        title: str = Field("", description="Job title (used with text input).")
-        company: str = Field("", description="Company name (used with text input).")
+        title: str = Field("", max_length=500, description="Job title (used with text input).")
+        company: str = Field("", max_length=500, description="Company name (used with text input).")
         use_ai: bool = Field(True, description="Enable AI escalation for ambiguous cases.")
 
+        @field_validator("url")
+        @classmethod
+        def url_must_have_http_scheme(cls, v: Optional[str]) -> Optional[str]:
+            if v is not None and not (v.startswith("http://") or v.startswith("https://")):
+                raise ValueError("url must start with http:// or https://")
+            return v
+
     class ReportRequest(BaseModel):
-        url: str = Field(..., description="Job posting URL being reported.")
+        url: str = Field(..., max_length=2048, description="Job posting URL being reported.")
         is_scam: bool = Field(..., description="True if this is a scam, False if legitimate.")
-        reason: str = Field("", description="Optional explanation.")
+        reason: str = Field("", max_length=5000, description="Optional explanation.")
 
     class ReportResponse(BaseModel):
         url: str
@@ -110,9 +117,10 @@ def create_app():  # noqa: C901
         redoc_url="/redoc",
     )
 
+    from sentinel.config import get_config
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=get_config().cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
