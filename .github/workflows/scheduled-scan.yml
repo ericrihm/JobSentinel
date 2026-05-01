@@ -16,7 +16,7 @@ on:
         default: "remote"
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   SCAN_QUERY: ${{ github.event.inputs.query || 'software engineer' }}
@@ -219,3 +219,79 @@ jobs:
           name: scan-results-${{ github.run_number }}
           path: scan-results/
           retention-days: 30
+
+      - name: Publish verified jobs to website
+        run: |
+          mkdir -p docs/data
+          python3 -c "
+          import json, os, glob
+          from datetime import datetime, timezone
+
+          results_file = 'scan-results/scan_'$(date +%Y-%m-%d)'.json'
+          if not os.path.exists(results_file):
+              files = sorted(glob.glob('scan-results/scan_*.json'))
+              results_file = files[-1] if files else None
+
+          if not results_file:
+              print('No scan results found, skipping publish')
+              exit(0)
+
+          with open(results_file) as f:
+              data = json.load(f)
+
+          now = datetime.now(timezone.utc).isoformat()
+          verified = []
+          stats = {
+              'total_scanned': 0,
+              'total_safe': 0,
+              'total_suspicious': 0,
+              'total_scam': 0,
+              'last_scan': now,
+              'sources': [],
+          }
+
+          for source in data.get('sources', []):
+              source_name = source.get('name', 'Unknown')
+              stats['sources'].append(source_name)
+              jobs = source.get('jobs', [])
+              stats['total_scanned'] += len(jobs)
+              for job in jobs:
+                  score = job.get('scam_score', 1.0)
+                  if score < 0.20:
+                      stats['total_safe'] += 1
+                      verified.append({
+                          'title': job.get('title', ''),
+                          'company': job.get('company', ''),
+                          'location': job.get('location', 'Remote'),
+                          'salary_min': job.get('salary_min', 0),
+                          'salary_max': job.get('salary_max', 0),
+                          'source': source_name,
+                          'url': job.get('url', job.get('id', '')),
+                          'scam_score': round(score, 3),
+                          'signal_count': job.get('signal_count', 0),
+                          'verified_at': now,
+                      })
+                  elif score < 0.60:
+                      stats['total_suspicious'] += 1
+                  else:
+                      stats['total_scam'] += 1
+
+          verified.sort(key=lambda j: j['scam_score'])
+          verified = verified[:50]
+
+          with open('docs/data/verified-jobs.json', 'w') as f:
+              json.dump({'jobs': verified, 'updated': now, 'count': len(verified)}, f, indent=2)
+
+          with open('docs/data/scan-stats.json', 'w') as f:
+              json.dump(stats, f, indent=2)
+
+          print(f'Published {len(verified)} verified jobs, {stats["total_scanned"]} total scanned')
+          "
+
+      - name: Commit scan data to docs
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git add docs/data/
+          git diff --staged --quiet || git commit -m "chore: update verified jobs data [skip ci]"
+          git push

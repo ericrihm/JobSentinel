@@ -648,6 +648,33 @@
     }
     .sidebar-card-action:hover { color: var(--text); }
 
+    /* Verified Jobs sidebar */
+    .sidebar-jobs-list { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }
+    .sidebar-job {
+      display: block;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--bg-secondary, rgba(255,255,255,.04));
+      border-left: 3px solid var(--green);
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.15s;
+    }
+    .sidebar-job:hover { background: var(--bg-hover, rgba(255,255,255,.08)); }
+    .sidebar-job-title { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin-bottom: 3px; }
+    .sidebar-job-company { font-size: 0.78rem; color: var(--text-secondary); }
+    .sidebar-job-check { font-size: 0.75rem; color: var(--green); margin-top: 4px; }
+    .sidebar-see-all {
+      display: block;
+      text-align: center;
+      padding: 10px;
+      font-size: 0.82rem;
+      color: var(--accent);
+      text-decoration: none;
+      border-top: 1px solid var(--border);
+    }
+    .sidebar-see-all:hover { text-decoration: underline; }
+
     /* History list */
     .history-list {
       display: flex;
@@ -780,6 +807,7 @@
           <li><a href="gallery.html">Gallery</a></li>
       <li><a href="demo.html">Demo</a></li>
       <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="jobs.html">Jobs</a></li>
       <li><a href="analyze.html" class="nav-cta" aria-current="page">Analyze</a></li>
     </ul>
     <button class="nav-mobile-toggle" id="mobileToggle" aria-label="Toggle menu" aria-expanded="false">☰</button>
@@ -915,6 +943,17 @@ Red flags to watch for:
           <div class="tip-item"><span class="tip-icon">🔓</span><span>Open source and MIT licensed. Analysis runs via our API with a client-side fallback.</span></div>
           <div class="tip-item"><span class="tip-icon">⭐</span><span><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">Star on GitHub</a> to support the project.</span></div>
         </div>
+      </div>
+
+      <!-- Verified Jobs sidebar -->
+      <div class="sidebar-card" id="verifiedJobsSidebar" style="display:none">
+        <div class="sidebar-card-head">
+          <span class="sidebar-card-title">🛡 Verified Safe Jobs</span>
+        </div>
+        <div id="sidebarJobs" class="sidebar-jobs-list">
+          <!-- Populated by JS -->
+        </div>
+        <a href="jobs.html" class="sidebar-see-all">See all verified jobs →</a>
       </div>
 
     </aside>
@@ -1903,6 +1942,33 @@ function dismissNudge() {
   if (el) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }
 }
 window.dismissNudge = dismissNudge;
+
+/* VERIFIED JOBS SIDEBAR */
+(async function loadSidebarJobs() {
+  try {
+    const resp = await fetch('data/verified-jobs.json');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const jobs = (data.jobs || []).slice(0, 3);
+    if (jobs.length === 0) return;
+    
+    const container = document.getElementById('sidebarJobs');
+    container.innerHTML = jobs.map(job => {
+      const salary = job.salary_min && job.salary_max 
+        ? `$${Math.round(job.salary_min/1000)}k–$${Math.round(job.salary_max/1000)}k` 
+        : '';
+      return `
+        <a href="${escHtml(job.url || '#')}" target="_blank" rel="noopener" class="sidebar-job">
+          <div class="sidebar-job-title">${escHtml(job.title || 'Open Position')}</div>
+          <div class="sidebar-job-company">${escHtml(job.company || '')}${salary ? ' · ' + salary : ''}</div>
+          <div class="sidebar-job-check">✓ 0 risk flags</div>
+        </a>
+      `;
+    }).join('');
+    
+    document.getElementById('verifiedJobsSidebar').style.display = 'block';
+  } catch(e) { /* silently fail */ }
+})();
 
 /* ============================================================
    KEYBOARD: Ctrl+Enter to analyze
