@@ -96,8 +96,26 @@ sentinel extension-build                 — Build browser extension
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/ -v    # 356 tests
 ```
+
+## Codexbro Integration
+
+Registered with codexbro for overnight autonomous building. Task specs in `docs/codex-tasks/` (15 files). Priority lanes: security > correctness > test coverage > features > innovation > polish.
+
+## Recent Changes (2026-04-30)
+
+- Fixed critical `parse_job_url` bug (URL analysis was silently broken)
+- Fixed `analyze_job` double-scoring and `--no-ai` passthrough
+- Built `sentinel/config.py` with TOML loading, wired into analyzer/api/db
+- Connected flywheel learned weights to scorer (learning loop was disconnected)
+- Fixed flywheel_metrics schema (7 missing columns + migration)
+- Fixed date parsing (ISO 8601 + relative dates)
+- Added company validation caching (7-day TTL, --refresh flag)
+- Added batch analysis (--file flag)
+- Security hardening (input validation, command injection, HTML sanitization)
+- Browser extension scaffold (Chrome MV3)
+- Test coverage: 154 → 356 tests (flywheel, API, CLI all covered)
 
 ## Storage
 
