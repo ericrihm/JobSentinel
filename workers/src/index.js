@@ -388,7 +388,7 @@ function handleRoot(env) {
       'GET /api/health': 'Health check',
     },
     rate_limit: `${RATE_LIMIT_RPM} requests/minute`,
-    docs: 'https://github.com/your-org/sentinel#api',
+    docs: 'https://github.com/ericrihm/JobSentinel#api',
   });
 }
 
