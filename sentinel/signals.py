@@ -1440,6 +1440,101 @@ def check_professional_application_process(job: JobPosting) -> ScamSignal | None
     )
 
 
+
+_STRUCTURED_INTERVIEW = re.compile(
+    r"\b(phone screen|technical interview|panel interview|coding challenge|"
+    r"take[\-\s]?home (?:test|assignment)|onsite interview|background check|"
+    r"reference check|offer letter|onboarding)\b",
+    re.IGNORECASE,
+)
+
+_BENEFITS = re.compile(
+    r"\b(health insurance|dental|vision|401\(?k\)?|paid time off|pto|"
+    r"parental leave|stock options|equity|rsu|espp|"
+    r"tuition reimbursement|retirement|pension)\b",
+    re.IGNORECASE,
+)
+
+_SALARY_RANGE = re.compile(
+    r"\$[\d,]+[kK]?\s*[-\u2013\u2014to]+\s*\$[\d,]+[kK]?",
+)
+
+_COMPANY_DETAILS = re.compile(
+    r"\b(founded in \d{4}|our team of \d+|series [a-c]|"
+    r"publicly traded|nasdaq|nyse|fortune \d+|inc\.? 5000|"
+    r"verified employer|employees?\b.*\d{2,})\b",
+    re.IGNORECASE,
+)
+
+
+def check_structured_interview(job: JobPosting) -> ScamSignal | None:
+    text = _full_text(job)
+    matches = [m.group(0) for m in _STRUCTURED_INTERVIEW.finditer(text)]
+    if len(matches) < 2:
+        return None
+    return ScamSignal(
+        name="structured_interview",
+        category=SignalCategory.POSITIVE,
+        weight=0.30,
+        confidence=0.75,
+        detail="Multi-step interview process described",
+        evidence=", ".join(matches[:3]),
+    )
+
+
+def check_benefits_listed(job: JobPosting) -> ScamSignal | None:
+    text = _full_text(job)
+    matches = [m.group(0) for m in _BENEFITS.finditer(text)]
+    if len(matches) < 2:
+        return None
+    return ScamSignal(
+        name="benefits_listed",
+        category=SignalCategory.POSITIVE,
+        weight=0.28,
+        confidence=0.72,
+        detail="Legitimate employment benefits described",
+        evidence=", ".join(matches[:4]),
+    )
+
+
+def check_salary_range_present(job: JobPosting) -> ScamSignal | None:
+    if getattr(job, "salary_min", 0) and getattr(job, "salary_max", 0):
+        return ScamSignal(
+            name="salary_range",
+            category=SignalCategory.POSITIVE,
+            weight=0.20,
+            confidence=0.65,
+            detail="Specific salary range provided",
+            evidence=f"${job.salary_min:,.0f}-${job.salary_max:,.0f}",
+        )
+    text = _full_text(job)
+    m = _SALARY_RANGE.search(text)
+    if not m:
+        return None
+    return ScamSignal(
+        name="salary_range",
+        category=SignalCategory.POSITIVE,
+        weight=0.20,
+        confidence=0.65,
+        detail="Specific salary range provided",
+        evidence=m.group(0),
+    )
+
+
+def check_company_details(job: JobPosting) -> ScamSignal | None:
+    text = _full_text(job)
+    m = _COMPANY_DETAILS.search(text)
+    if not m:
+        return None
+    return ScamSignal(
+        name="company_details",
+        category=SignalCategory.POSITIVE,
+        weight=0.35,
+        confidence=0.70,
+        detail="Posting includes verifiable company details",
+        evidence=m.group(0),
+    )
+
 # ---------------------------------------------------------------------------
 # Known scam entity detection helpers
 # ---------------------------------------------------------------------------
@@ -1726,6 +1821,10 @@ ALL_SIGNALS = [
     check_detailed_requirements,
     check_verified_company_website,
     check_professional_application_process,
+    check_structured_interview,
+    check_benefits_listed,
+    check_salary_range_present,
+    check_company_details,
     # AI-informed scam detection
     check_phone_anomaly,
     check_interview_bypass,
