@@ -19,7 +19,6 @@ htmlcov/
 mutants/
 
 # Private
-CLAUDE.md
 .claude/
 sentinel/ecosystem.py
 sentinel/*bridge*.py

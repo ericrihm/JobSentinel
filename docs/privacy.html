@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="JobSentinel Privacy Policy — how we handle your data when you analyze job postings." />
+  <meta property="og:title" content="Privacy Policy — JobSentinel" />
+  <meta property="og:description" content="JobSentinel privacy policy. We respect your data — analysis runs client-side with no tracking." />
+  <meta property="og:url" content="https://jobsentinel.org/privacy.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://jobsentinel.org/og-preview.png" />
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Privacy Policy — JobSentinel">
+  <meta name="twitter:description" content="JobSentinel privacy policy. We respect your data — analysis runs client-side with no tracking.">
+  <meta name="twitter:image" content="https://jobsentinel.org/og-preview.png">
+  <link rel="canonical" href="https://jobsentinel.org/privacy.html">
   <title>Privacy Policy — JobSentinel</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
@@ -27,11 +37,13 @@
     <a href="index.html" class="nav-logo" aria-label="JobSentinel home"><span class="nav-logo-icon">🛡</span><span>JobSentinel</span></a>
     <ul class="nav-links" id="navLinks">
       <li><a href="index.html">Home</a></li>
-      <li><a href="analyze.html">Analyze</a></li>
+      <li><a href="gallery.html">Gallery</a></li>
       <li><a href="jobs.html">Jobs</a></li>
+      <li><a href="demo.html">Demo</a></li>
       <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="analyze.html" class="nav-cta">Analyze</a></li>
     </ul>
-    <button class="nav-mobile-toggle" aria-label="Toggle menu">☰</button>
+    <button class="nav-mobile-toggle" aria-label="Toggle menu" aria-expanded="false">☰</button>
   </div>
 </nav>
 
@@ -129,11 +141,48 @@
 
 <footer>
   <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <h3>🛡 JobSentinel</h3>
+        <p>AI-powered job scam detection. Free, open source, and constantly improving. Built to protect job seekers.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="index.html#how-it-works">How It Works</a></li>
+          <li><a href="index.html#features">Features</a></li>
+          <li><a href="gallery.html">Scam Gallery</a></li>
+          <li><a href="jobs.html">Verified Jobs</a></li>
+          <li><a href="demo.html">Demo</a></li>
+          <li><a href="analyze.html">Analyzer</a></li>
+          <li><a href="index.html#install">Installation</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">Issue Tracker</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel/discussions" target="_blank" rel="noopener">Discussions</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          <li><a href="privacy.html">Privacy Policy</a></li>
+          <li><a href="terms.html">Terms of Service</a></li>
+        </ul>
+      </div>
+    </div>
     <div class="footer-bottom">
       <p>&copy; 2026 JobSentinel. Released under the MIT License.</p>
       <div class="footer-badges">
         <span class="badge badge-green">Open Source</span>
         <span class="badge badge-accent">MIT License</span>
+        <span class="badge badge-accent">v0.9.0</span>
       </div>
     </div>
   </div>
@@ -144,5 +193,6 @@ const toggle = document.querySelector('.nav-mobile-toggle');
 const navLinks = document.querySelector('.nav-links');
 toggle?.addEventListener('click', () => navLinks?.classList.toggle('open'));
 </script>
+<script type="module" src="analyze-bridge.js"></script>
 </body>
 </html>
