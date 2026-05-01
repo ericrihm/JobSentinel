@@ -160,6 +160,50 @@ class CUSUMDetector:
         return self._s_neg
 
 
+
+# ---------------------------------------------------------------------------
+# ADWIN drift detection (river library)
+# ---------------------------------------------------------------------------
+
+try:
+    from river.drift import ADWIN as _RiverADWIN
+    _ADWIN_AVAILABLE = True
+except ImportError:
+    _RiverADWIN = None
+    _ADWIN_AVAILABLE = False
+
+
+class ADWINDriftDetector:
+    """Wraps river.drift.ADWIN for adaptive-window concept drift detection.
+
+    Degrades gracefully when the river library is not installed.
+    """
+
+    def __init__(self, delta: float = 0.002) -> None:
+        self.delta = delta
+        self._detector = _RiverADWIN(delta=delta) if _ADWIN_AVAILABLE else None
+        self.alarm_fired: bool = False
+
+    def update(self, value: float) -> bool:
+        """Feed one observation; return True if ADWIN signals a drift."""
+        if self._detector is None:
+            logger.debug("river not installed — ADWIN drift detection skipped.")
+            return False
+        self._detector.update(value)
+        if self._detector.drift_detected:
+            self.alarm_fired = True
+            return True
+        return False
+
+    def reset(self) -> None:
+        self.alarm_fired = False
+        if self._detector is not None:
+            self._detector = _RiverADWIN(delta=self.delta)
+
+    @property
+    def available(self) -> bool:
+        return _ADWIN_AVAILABLE
+
 # ---------------------------------------------------------------------------
 # Main flywheel
 # ---------------------------------------------------------------------------
@@ -186,6 +230,7 @@ class DetectionFlywheel:
         self.db = db or SentinelDB()
         self.weight_tracker = SignalWeightTracker()
         self._cusum = CUSUMDetector(target=0.0, slack=0.5, threshold=5.0)
+        self._adwin = ADWINDriftDetector(delta=0.002)
         self._cycle_count: int = 0
         self._last_regression_response: dict | None = None
         self._alert_callbacks: list[callable] = []
@@ -245,13 +290,37 @@ class DetectionFlywheel:
         retained: list[str] = []
 
         # --- Promote candidates ---
+        # Fetch current active patterns once for novelty comparison in RuleEvaluator
+        from sentinel.rule_evaluator import RuleEvaluator
+        _rule_evaluator = RuleEvaluator()
+        _active_for_novelty = self.db.get_patterns(status="active")
+
         candidates = self.db.get_patterns(status="candidate")
         for row in candidates:
             obs = row.get("observations", 0)
             tp = row.get("true_positives", 0)
             fp = row.get("false_positives", 0)
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-            if obs >= self.PROMOTE_MIN_OBSERVATIONS and precision >= self.PROMOTE_PRECISION_THRESHOLD:
+            stats_pass = obs >= self.PROMOTE_MIN_OBSERVATIONS and precision >= self.PROMOTE_PRECISION_THRESHOLD
+            if stats_pass:
+                # Secondary quality gate: RuleEvaluator composite score
+                try:
+                    eval_result = _rule_evaluator.evaluate_candidate(row, _active_for_novelty)
+                    quality_pass = eval_result["recommendation"] == "promote"
+                    if not quality_pass:
+                        logger.info(
+                            "Pattern %s passed stats gate but failed RuleEvaluator (score=%.3f): %s",
+                            row["pattern_id"],
+                            eval_result["composite_score"],
+                            eval_result["reason"],
+                        )
+                except Exception:
+                    logger.debug("RuleEvaluator failed for %s (non-fatal)", row.get("pattern_id"), exc_info=True)
+                    quality_pass = True  # degrade gracefully — don't block promotion on evaluator error
+            else:
+                quality_pass = False
+
+            if stats_pass and quality_pass:
                 self.db.save_pattern({**row, "status": "active"})
                 promoted.append(row["pattern_id"])
             else:
@@ -584,13 +653,28 @@ class DetectionFlywheel:
             else None
         )
 
+        adwin_alarm = False
+        for r in reports_sorted:
+            point = 1.0 if (r.get("is_scam") == 1 and r.get("was_correct") == 1) else 0.0
+            adwin_alarm = self._adwin.update(point)
+
+        combined_alarm = alarm or adwin_alarm
+
+        if combined_alarm:
+            message = "Regression detected — patterns may need retraining."
+        else:
+            message = "No regression detected."
+
         return {
-            "alarm": alarm,
+            "alarm": combined_alarm,
+            "cusum_alarm": alarm,
+            "adwin_alarm": adwin_alarm,
+            "adwin_available": self._adwin.available,
             "cusum_statistic": round(self._cusum.statistic, 4),
             "cusum_baseline": round(baseline, 4),
             "rolling_precision": round(rolling_precision, 4) if rolling_precision is not None else None,
             "window": len(reports_sorted),
-            "message": "Regression detected — patterns may need retraining." if alarm else "No regression detected.",
+            "message": message,
         }
 
     # ------------------------------------------------------------------
@@ -649,6 +733,40 @@ class DetectionFlywheel:
             logger.debug("Shadow evaluation failed (non-fatal)", exc_info=True)
             shadow_evaluation = {"active": False, "jobs_evaluated": 0, "promoted": False, "rejected": False}
 
+        # --- Ensemble disagreement routing ---
+        # If shadow scorer is inactive, check recent scans for high disagreement
+        # and auto-propose shadow weights to test alternative weighting.
+        disagreement_routed = 0
+        if not self.shadow.active:
+            try:
+                from sentinel.scorer import EnsembleScorer
+                ens = EnsembleScorer()
+                rows = self.db.conn.execute(
+                    """SELECT COUNT(*) as cnt FROM jobs
+                       WHERE scam_score BETWEEN 0.3 AND 0.7
+                       AND scanned_at > datetime('now', '-7 days')
+                    """
+                ).fetchone()
+                ambiguous_count = (rows["cnt"] if rows else 0)
+                high_disagree = ambiguous_count
+                if high_disagree >= 10:
+                    # Enough ambiguous jobs — propose Thompson-sampled weights
+                    tracker = self.weight_tracker
+                    candidate = {}
+                    for p in self.db.get_patterns(status="active"):
+                        pid = p.get("pattern_id", "")
+                        if pid:
+                            candidate[pid] = tracker.get_weight(pid)
+                    if candidate:
+                        self.shadow.propose_weights(candidate)
+                        disagreement_routed = high_disagree
+                        logger.info(
+                            "Disagreement routing: %d ambiguous jobs triggered shadow run",
+                            disagreement_routed,
+                        )
+            except Exception:
+                logger.debug("Disagreement routing failed (non-fatal)", exc_info=True)
+
         # Collect updated signal count from all active pattern observations
         active_patterns = self.db.get_patterns(status="active")
         signals_updated = sum(p.get("observations", 0) for p in active_patterns)
@@ -668,10 +786,14 @@ class DetectionFlywheel:
             "patterns_promoted": evolution.get("promoted", []),
             "patterns_deprecated": evolution.get("deprecated", []),
             "regression_alarm": regression.get("alarm", False),
+            "cusum_alarm": regression.get("cusum_alarm", False),
+            "adwin_alarm": regression.get("adwin_alarm", False),
+            "adwin_available": regression.get("adwin_available", False),
             "cusum_statistic": regression.get("cusum_statistic", 0.0),
             "calibration_ece": ece,
             "thresholds_adjusted": len(threshold_adjustment.get("adjusted", [])),
             "shadow_evaluation": shadow_evaluation,
+            "disagreement_routed": disagreement_routed,
         }
 
         # --- Regression response ---
@@ -984,3 +1106,4 @@ class DetectionFlywheel:
         baseline = accuracy.get("precision", 0.0)
         if baseline > 0.0:
             self._cusum = CUSUMDetector(target=baseline, slack=0.1, threshold=5.0)
+            self._adwin.reset()

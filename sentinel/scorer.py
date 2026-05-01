@@ -180,18 +180,53 @@ def build_result(
     job: JobPosting,
     signals: list[ScamSignal],
     analysis_time_ms: float = 0.0,
+    *,
+    db=None,
 ) -> ValidationResult:
-    """Full pipeline: score signals, classify risk, build result."""
+    """Full pipeline: score signals, classify risk, build result.
+
+    When *db* is provided the ensemble scorer runs alongside the primary
+    scorer.  High disagreement between methods sets *needs_review* on
+    the returned ValidationResult so the flywheel can route the job to
+    shadow scoring.
+    """
     scam_score, confidence = score_signals(signals)
+
+    ensemble_disagreement = 0.0
+    needs_review = False
+    try:
+        ens = EnsembleScorer()
+        er = ens.score_ensemble(db, job, signals)
+        ensemble_disagreement = er.disagreement
+        if er.confidence_adjustment < 0:
+            confidence = max(0.0, confidence + er.confidence_adjustment)
+            needs_review = True
+    except Exception:
+        logger.debug("Ensemble scoring failed; using primary only", exc_info=True)
+
     risk_level = classify_risk(scam_score)
-    return ValidationResult(
+
+    # Compute Shapley-inspired signal attributions
+    signal_attributions: list[dict] = []
+    try:
+        from sentinel.counterfactual import SignalAttributor
+        attributor = SignalAttributor()
+        signal_attributions = attributor.attribute(signals)
+    except Exception:
+        logger.debug("Signal attribution failed; skipping", exc_info=True)
+
+    result = ValidationResult(
         job=job,
         signals=signals,
         scam_score=scam_score,
         confidence=confidence,
         risk_level=risk_level,
         analysis_time_ms=analysis_time_ms,
+        ensemble_disagreement=ensemble_disagreement,
+        needs_review=needs_review,
     )
+    result.signal_attributions = signal_attributions
+    return result
 
 
 # ---------------------------------------------------------------------------

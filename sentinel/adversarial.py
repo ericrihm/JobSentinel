@@ -158,32 +158,39 @@ class TextNormalizer:
         """Apply the full normalization pipeline and return the cleaned text.
 
         Pipeline order (each step feeds the next):
-          1. Unicode NFC normalization
-          2. Zero-width / invisible character removal
-          3. Unusual whitespace → regular space
-          4. Confusable / homoglyph → ASCII equivalent
-          5. Leetspeak digit/symbol expansion
-          6. Collapse repeated whitespace
+          1. Strip zero-width / invisible characters
+          2. NFKD normalization — decomposes ligatures, compatibility chars, fullwidth
+          3. Strip combining marks exposed by NFKD decomposition
+          4. Unusual whitespace → regular space
+          5. Confusable / homoglyph → ASCII equivalent
+          6. Leetspeak digit/symbol expansion
+          7. Collapse repeated whitespace
         """
         if not text:
             return text
 
-        # 1. NFC — compose combining sequences so we see base + diacritic as one char
-        text = unicodedata.normalize("NFC", text)
-
-        # 2. Remove zero-width and invisible characters
+        # 1. Remove zero-width and invisible characters before normalization so
+        # they cannot hide inside decomposed sequences.
         text = _INVISIBLE_CHARS.sub("", text)
 
-        # 3. Unusual whitespace → regular space
+        # 2. NFKD decomposes ligatures (ﬁ→fi), fullwidth (Ａ→A), and compatibility
+        # characters that NFC would leave opaque to the homoglyph table below.
+        text = unicodedata.normalize("NFKD", text)
+
+        # 3. Drop combining marks (Mn category) that NFKD exposed — e.g. café→cafe.
+        # This strips accent-based obfuscation while preserving base letters.
+        text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+
+        # 4. Unusual whitespace → regular space
         text = _UNUSUAL_WHITESPACE.sub(" ", text)
 
-        # 4. Confusable / homoglyph normalisation
+        # 5. Confusable / homoglyph normalisation
         text = text.translate(_CONFUSABLE_TABLE)
 
-        # 5. Leetspeak digit/symbol → letter (only outside obvious numeric contexts)
+        # 6. Leetspeak digit/symbol → letter (only outside obvious numeric contexts)
         text = self._expand_leet(text)
 
-        # 6. Collapse repeated whitespace
+        # 7. Collapse repeated whitespace
         text = re.sub(r"  +", " ", text)
 
         return text
@@ -505,3 +512,207 @@ class EvasionDetector:
             if m:
                 found.append(m.group(0))
         return found
+
+# ---------------------------------------------------------------------------
+# Adversarial Training — TextAttack-style signal hardening
+# ---------------------------------------------------------------------------
+
+import random as _random
+
+_ATTACK_STRATEGIES = [
+    'homoglyph',
+    'zwc_insert',
+    'leetspeak',
+    'whitespace_split',
+    'case_swap',
+    'char_duplicate',
+    'char_drop',
+]
+
+
+class AdversarialTrainer:
+    """Generate adversarial variants of scam text and test signal resilience.
+
+    For each known scam keyword or pattern, applies multiple perturbation
+    strategies and checks whether signal extraction still detects it after
+    normalization.  Reports survival rates per signal and per attack type.
+    """
+
+    def __init__(self, normalizer: TextNormalizer | None = None) -> None:
+        self._normalizer = normalizer or TextNormalizer()
+        self._rng = _random.Random(42)
+
+    def _apply_homoglyph(self, text: str) -> str:
+        result = list(text)
+        reverse_map: dict[str, list[str]] = {}
+        for cp, latin in _CONFUSABLE_MAP.items():
+            reverse_map.setdefault(latin.lower(), []).append(chr(cp))
+        for i, ch in enumerate(result):
+            if ch.lower() in reverse_map and self._rng.random() < 0.4:
+                result[i] = self._rng.choice(reverse_map[ch.lower()])
+        return ''.join(result)
+
+    def _apply_zwc_insert(self, text: str) -> str:
+        zwc = '​'
+        result = []
+        for ch in text:
+            result.append(ch)
+            if ch.isalpha() and self._rng.random() < 0.3:
+                result.append(zwc)
+        return ''.join(result)
+
+    def _apply_leetspeak(self, text: str) -> str:
+        leet = {'a': '4', 'e': '3', 'i': '1', 'o': '0', 's': '5', 't': '7'}
+        result = []
+        for ch in text:
+            if ch.lower() in leet and self._rng.random() < 0.4:
+                result.append(leet[ch.lower()])
+            else:
+                result.append(ch)
+        return ''.join(result)
+
+    def _apply_whitespace_split(self, text: str) -> str:
+        words = text.split()
+        result = []
+        for w in words:
+            if len(w) > 4 and self._rng.random() < 0.3:
+                pos = self._rng.randint(1, len(w) - 2)
+                result.append(w[:pos] + ' ' + w[pos:])
+            else:
+                result.append(w)
+        return ' '.join(result)
+
+    def _apply_case_swap(self, text: str) -> str:
+        result = []
+        for ch in text:
+            if ch.isalpha() and self._rng.random() < 0.3:
+                result.append(ch.swapcase())
+            else:
+                result.append(ch)
+        return ''.join(result)
+
+    def _apply_char_duplicate(self, text: str) -> str:
+        result = []
+        for ch in text:
+            result.append(ch)
+            if ch.isalpha() and self._rng.random() < 0.15:
+                result.append(ch)
+        return ''.join(result)
+
+    def _apply_char_drop(self, text: str) -> str:
+        result = []
+        for ch in text:
+            if ch.isalpha() and self._rng.random() < 0.1:
+                continue
+            result.append(ch)
+        return ''.join(result)
+
+    def perturb(self, text: str, strategy: str) -> str:
+        dispatch = {
+            'homoglyph': self._apply_homoglyph,
+            'zwc_insert': self._apply_zwc_insert,
+            'leetspeak': self._apply_leetspeak,
+            'whitespace_split': self._apply_whitespace_split,
+            'case_swap': self._apply_case_swap,
+            'char_duplicate': self._apply_char_duplicate,
+            'char_drop': self._apply_char_drop,
+        }
+        fn = dispatch.get(strategy)
+        if fn is None:
+            return text
+        return fn(text)
+
+    def generate_variants(
+        self,
+        text: str,
+        strategies: list[str] | None = None,
+        n_per_strategy: int = 3,
+    ) -> list[dict]:
+        strategies = strategies or _ATTACK_STRATEGIES
+        variants: list[dict] = []
+        for strat in strategies:
+            for _ in range(n_per_strategy):
+                self._rng = _random.Random(self._rng.randint(0, 2**32))
+                perturbed = self.perturb(text, strat)
+                normalized = self._normalizer.normalize(perturbed)
+                variants.append({
+                    'strategy': strat,
+                    'original': text,
+                    'perturbed': perturbed,
+                    'normalized': normalized,
+                    'recovered': normalized.lower().strip() == text.lower().strip(),
+                })
+        return variants
+
+    def test_signal_resilience(
+        self,
+        text: str,
+        signal_extractor,
+        strategies: list[str] | None = None,
+    ) -> dict:
+        """Test whether signal extraction survives adversarial perturbations.
+
+        Args:
+            text: Original scam job posting text.
+            signal_extractor: Callable that takes text and returns a list of
+                              signal names (or ScamSignal objects with .name).
+            strategies: List of attack strategies to test.
+
+        Returns:
+            Dict with per-strategy and per-signal survival rates.
+        """
+        from sentinel.models import JobPosting
+
+        baseline_job = JobPosting(description=text)
+        baseline_signals = signal_extractor(baseline_job)
+        baseline_names = set()
+        for s in baseline_signals:
+            name = s.name if hasattr(s, 'name') else str(s)
+            baseline_names.add(name)
+
+        if not baseline_names:
+            return {'baseline_signals': 0, 'strategies': {}, 'overall_survival': 1.0}
+
+        strategies = strategies or _ATTACK_STRATEGIES
+        strategy_results: dict[str, dict] = {}
+        signal_survival: dict[str, list[bool]] = {n: [] for n in baseline_names}
+
+        for strat in strategies:
+            variants = self.generate_variants(text, [strat], n_per_strategy=5)
+            survived_total = 0
+            tested_total = 0
+
+            for v in variants:
+                attacked_job = JobPosting(description=v['normalized'])
+                attacked_signals = signal_extractor(attacked_job)
+                attacked_names = set()
+                for s in attacked_signals:
+                    name = s.name if hasattr(s, 'name') else str(s)
+                    attacked_names.add(name)
+
+                for bn in baseline_names:
+                    hit = bn in attacked_names
+                    signal_survival[bn].append(hit)
+                    tested_total += 1
+                    if hit:
+                        survived_total += 1
+
+            strategy_results[strat] = {
+                'survival_rate': survived_total / tested_total if tested_total else 1.0,
+                'variants_tested': len(variants),
+            }
+
+        per_signal = {}
+        for name, hits in signal_survival.items():
+            per_signal[name] = sum(hits) / len(hits) if hits else 1.0
+
+        all_hits = [h for hits in signal_survival.values() for h in hits]
+        overall = sum(all_hits) / len(all_hits) if all_hits else 1.0
+
+        return {
+            'baseline_signals': len(baseline_names),
+            'strategies': strategy_results,
+            'per_signal_survival': per_signal,
+            'overall_survival': round(overall, 4),
+            'weak_signals': [n for n, r in per_signal.items() if r < 0.6],
+        }
