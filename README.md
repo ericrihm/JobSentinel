@@ -4,7 +4,7 @@
 # JobSentinel
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-227%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-393%20passing-brightgreen.svg)](#development)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-purple.svg)](https://github.com/astral-sh/ruff)
 
@@ -334,7 +334,7 @@ python -m pytest tests/test_security.py -v
 ruff check sentinel/
 ```
 
-**227 tests** across 10 test files covering:
+**393 tests** across 14 test files covering:
 
 | Test File | What It Covers |
 |-----------|---------------|
@@ -346,6 +346,12 @@ ruff check sentinel/
 | `test_schema_and_dates.py` | DB schema migration, date format parsing |
 | `test_company_cache.py` | Validation caching, TTL expiry, refresh |
 | `test_batch.py` | Batch file analysis, JSON output |
+| `test_scan.py` | LinkedIn search scraping, scan CLI, URL building |
+| `test_rate_limit.py` | API rate limiting, API key auth, 429 responses |
+| `test_innovation_strategies.py` | Signal correlation, keyword expansion, pattern mining |
+| `test_property.py` | Hypothesis fuzzing: signals, scorer, build_result |
+| `test_flywheel.py` | CUSUM detector, signal weight tracker, detection flywheel |
+| `test_cli.py` | CLI commands: analyze, validate, report, patterns, stats |
 
 ### Security
 
