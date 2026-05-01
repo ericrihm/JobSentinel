@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Scam Pattern Gallery — Learn to recognize 8 common job scam archetypes with annotated signal breakdowns. Real-world examples with detection tips from JobSentinel." />
+  <meta name="keywords" content="job scam patterns, scam archetypes, job fraud examples, employment scam types, advance fee scam, reshipping scam, identity theft job, crypto task scam" />
+  <meta property="og:title" content="Scam Pattern Gallery — JobSentinel" />
+  <meta property="og:description" content="Learn to recognize 8 common job scam archetypes with annotated signal breakdowns. Real-world examples, detection tips, and AI-powered analysis." />
+  <meta property="og:url" content="https://jobsentinel.org/gallery" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://jobsentinel.org/og-preview.png" />
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Scam Pattern Gallery — JobSentinel">
+  <meta name="twitter:description" content="Learn to recognize 8 common job scam archetypes with annotated signal breakdowns. Real-world examples, detection tips, and AI-powered analysis.">
+  <meta name="twitter:image" content="https://jobsentinel.org/og-preview.png">
+  <link rel="canonical" href="https://jobsentinel.org/gallery.html">
+  <title>Scam Pattern Gallery — JobSentinel</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
+  <style>
+    /* ============================================================
+       gallery.html — page-specific styles
+       ============================================================ */
+
+    /* Page header */
+    .gallery-hero {
+      position: relative;
+      overflow: hidden;
+      padding: 80px 0 48px;
+      text-align: center;
+    }
+    .gallery-hero-bg {
+      position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(248,81,73,.08), transparent),
+        radial-gradient(ellipse 60% 40% at 20% 60%, rgba(219,109,40,.06), transparent),
+        radial-gradient(ellipse 50% 40% at 80% 50%, rgba(88,166,255,.06), transparent);
+    }
+    .gallery-hero h1 {
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      margin-bottom: 16px;
+      background: linear-gradient(160deg, #fff 30%, var(--red) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .gallery-hero p {
+      color: var(--muted);
+      font-size: clamp(.95rem, 2vw, 1.15rem);
+      max-width: 600px;
+      margin: 0 auto 24px;
+      line-height: 1.6;
+    }
+    .gallery-hero-stats {
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .gallery-hero-stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: .85rem;
+      color: var(--muted);
+    }
+    .gallery-hero-stat strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    /* Grid layout */
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      padding: 0 0 80px;
+    }
+
+    /* Card */
+    .gallery-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .gallery-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: 4px;
+    }
+    .gallery-card.severity-critical::before { background: var(--red); }
+    .gallery-card.severity-high::before { background: var(--orange); }
+    .gallery-card.severity-medium::before { background: var(--yellow); }
+    .gallery-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow), var(--glow);
+      border-color: rgba(88,166,255,.2);
+    }
+
+    /* Card header */
+    .gallery-card-header {
+      padding: 24px 24px 16px 28px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+    .gallery-card-icon {
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+    .severity-critical .gallery-card-icon { background: rgba(248,81,73,.12); }
+    .severity-high .gallery-card-icon { background: rgba(219,109,40,.12); }
+    .severity-medium .gallery-card-icon { background: rgba(210,153,34,.12); }
+
+    .gallery-card-title-group { flex: 1; min-width: 0; }
+    .gallery-card-number {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .gallery-card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    /* Example text */
+    .gallery-example {
+      margin: 0 24px 16px 28px;
+      padding: 14px 16px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-family: var(--mono);
+      font-size: .8rem;
+      line-height: 1.6;
+      color: var(--muted);
+      position: relative;
+    }
+    .gallery-example::before {
+      content: 'Example posting';
+      position: absolute;
+      top: -9px;
+      left: 12px;
+      padding: 0 6px;
+      background: var(--bg);
+      font-family: var(--font);
+      font-size: .65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+    }
+
+    /* Signal pills */
+    .gallery-signals {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 0 24px 16px 28px;
+    }
+    .gallery-signal {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: .72rem;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    .gallery-signal::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .gallery-signal.red {
+      background: rgba(248,81,73,.1);
+      color: var(--red);
+      border: 1px solid rgba(248,81,73,.2);
+    }
+    .gallery-signal.red::before { background: var(--red); }
+    .gallery-signal.orange {
+      background: rgba(219,109,40,.1);
+      color: var(--orange);
+      border: 1px solid rgba(219,109,40,.2);
+    }
+    .gallery-signal.orange::before { background: var(--orange); }
+    .gallery-signal.yellow {
+      background: rgba(210,153,34,.1);
+      color: var(--yellow);
+      border: 1px solid rgba(210,153,34,.2);
+    }
+    .gallery-signal.yellow::before { background: var(--yellow); }
+    .gallery-signal.blue {
+      background: rgba(88,166,255,.1);
+      color: var(--accent);
+      border: 1px solid rgba(88,166,255,.2);
+    }
+    .gallery-signal.blue::before { background: var(--accent); }
+
+    /* Danger and tip sections */
+    .gallery-card-body {
+      padding: 0 24px 20px 28px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .gallery-danger,
+    .gallery-tip {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: .84rem;
+      line-height: 1.5;
+    }
+    .gallery-danger-icon,
+    .gallery-tip-icon {
+      flex-shrink: 0;
+      width: 22px; height: 22px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .75rem;
+      margin-top: 1px;
+    }
+    .gallery-danger-icon {
+      background: rgba(248,81,73,.12);
+      color: var(--red);
+    }
+    .gallery-tip-icon {
+      background: rgba(63,185,80,.12);
+      color: var(--green);
+    }
+    .gallery-danger p { color: var(--muted); }
+    .gallery-danger p strong { color: var(--red); font-weight: 600; }
+    .gallery-tip p { color: var(--muted); }
+    .gallery-tip p strong { color: var(--green); font-weight: 600; }
+
+    /* Try it link */
+    .gallery-card-footer {
+      padding: 12px 24px 12px 28px;
+      border-top: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .gallery-try-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--accent);
+      transition: gap .2s;
+    }
+    .gallery-try-link:hover {
+      gap: 10px;
+      text-decoration: none;
+    }
+    .gallery-try-link .arrow {
+      transition: transform .2s;
+    }
+    .gallery-try-link:hover .arrow {
+      transform: translateX(3px);
+    }
+
+    /* CTA section at bottom */
+    .gallery-cta {
+      text-align: center;
+      padding: 60px 0 80px;
+      border-top: 1px solid var(--border);
+    }
+    .gallery-cta h2 {
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 700;
+      margin-bottom: 12px;
+      letter-spacing: -.02em;
+    }
+    .gallery-cta p {
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 500px;
+      margin: 0 auto 28px;
+    }
+    .gallery-cta-actions {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .gallery-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .gallery-hero { padding: 56px 0 36px; }
+      .gallery-card-header { padding: 20px 18px 14px 22px; }
+      .gallery-example { margin: 0 18px 14px 22px; }
+      .gallery-signals { padding: 0 18px 14px 22px; }
+      .gallery-card-body { padding: 0 18px 18px 22px; }
+      .gallery-card-footer { padding: 12px 18px 12px 22px; }
+      .gallery-hero-stats { flex-direction: column; align-items: center; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo" aria-label="JobSentinel home">
+      <span class="nav-logo-icon">🛡</span>
+      <span>JobSentinel</span>
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="index.html#how-it-works">How It Works</a></li>
+      <li><a href="index.html#features">Features</a></li>
+      <li><a href="gallery.html" style="color:var(--text)" aria-current="page">Gallery</a></li>
+      <li><a href="demo.html">Demo</a></li>
+      <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="analyze.html" class="nav-cta">Analyze</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" id="mobileToggle" aria-label="Toggle menu" aria-expanded="false">☰</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="gallery-hero">
+  <div class="gallery-hero-bg" aria-hidden="true"></div>
+  <div class="container">
+    <div class="fade-up">
+      <span class="badge badge-red">Educational Resource</span>
+    </div>
+    <h1 class="fade-up delay-1">Scam Pattern Gallery</h1>
+    <p class="fade-up delay-2">
+      Real-world job scam archetypes with annotated signal breakdowns.
+      Learn what to look for before you become a target.
+    </p>
+    <div class="gallery-hero-stats fade-up delay-3">
+      <div class="gallery-hero-stat">
+        <span>🎯</span>
+        <span><strong>8</strong> Scam Archetypes</span>
+      </div>
+      <div class="gallery-hero-stat">
+        <span>🔬</span>
+        <span><strong>27</strong> Detection Signals</span>
+      </div>
+      <div class="gallery-hero-stat">
+        <span>💡</span>
+        <span>Annotated Examples</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- GALLERY GRID -->
+<section>
+  <div class="container">
+    <div class="gallery-grid">
+
+      <!-- 1. The Advance Fee Scam -->
+      <div class="gallery-card severity-critical reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">💸</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #1</div>
+            <div class="gallery-card-title">The Advance Fee Scam</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "Congratulations! You've been selected for a Remote Data Entry position paying $45/hr. To get started, please purchase our proprietary software package ($299) which will be reimbursed in your first paycheck."
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal red">Upfront Payment</span>
+          <span class="gallery-signal red">Guaranteed Income</span>
+          <span class="gallery-signal orange">Too-Good Salary</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> They take your money and disappear. Legitimate employers never charge for equipment or training.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> Any job that asks you to pay money before you start working is a scam, no exceptions.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- 2. The Reshipping Mule -->
+      <div class="gallery-card severity-critical reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">📦</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #2</div>
+            <div class="gallery-card-title">The Reshipping Mule</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "Package Quality Inspector needed! Work from home receiving, inspecting, and forwarding packages. No experience needed. Earn $2,500/week. Must have a home address to receive shipments."
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal red">Reshipping Scam</span>
+          <span class="gallery-signal red">WFH Unrealistic Pay</span>
+          <span class="gallery-signal orange">No Experience Needed</span>
+          <span class="gallery-signal red">Guaranteed Income</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> You become an unwitting accomplice in a fraud ring, receiving stolen goods and forwarding them. You're legally liable.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> Legitimate "package inspector" jobs don't exist as remote positions using your home address.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- 3. The Identity Harvest -->
+      <div class="gallery-card severity-critical reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">🪪</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #3</div>
+            <div class="gallery-card-title">The Identity Harvest</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "URGENT HIRING: Administrative Assistant at Global Solutions Inc. Send resume with SSN, date of birth, and bank account details for direct deposit setup to hr@globalsolut1ons-careers.com"
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal red">Personal Info Request</span>
+          <span class="gallery-signal red">Urgency Pressure</span>
+          <span class="gallery-signal orange">Suspicious Email</span>
+          <span class="gallery-signal red">Brand Impersonation</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> They steal your identity. No legitimate employer asks for SSN or bank details before an interview.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> Check the email domain carefully &mdash; typosquatting (like "solut1ons") is a dead giveaway.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- 4. The Crypto Task Scam -->
+      <div class="gallery-card severity-critical reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">🪙</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #4</div>
+            <div class="gallery-card-title">The Crypto Task Scam</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "Earn $500-$1000 daily! Join our team of crypto trading assistants. We'll train you on our platform. Start with a small deposit of $100 USDT to activate your account. Guaranteed returns!"
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal orange">Crypto Payment</span>
+          <span class="gallery-signal red">Guaranteed Income</span>
+          <span class="gallery-signal orange">Too-Good Salary</span>
+          <span class="gallery-signal red">Upfront Payment</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> A Ponzi-style scheme. Initial "profits" come from new victims' deposits until the platform vanishes.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> Any "job" requiring a deposit, especially in crypto, is designed to steal your money.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- 5. The Ghost Job -->
+      <div class="gallery-card severity-medium reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">👻</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #5</div>
+            <div class="gallery-card-title">The Ghost Job</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "Marketing Manager — Apply Now! We're always looking for talented individuals. This position has been open for 180+ days. Rolling applications accepted. No specific qualifications required."
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal yellow">Stale Posting</span>
+          <span class="gallery-signal yellow">Evergreen Posting</span>
+          <span class="gallery-signal blue">Vague Description</span>
+          <span class="gallery-signal blue">No Qualifications</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> Not a real opening. Companies post ghost jobs to collect resumes, appear to be growing, or benchmark salaries.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> If the posting has been up for months with no specific qualifications, nobody is actually hiring for it.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- 6. The Interview Bypass -->
+      <div class="gallery-card severity-high reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">⏭</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #6</div>
+            <div class="gallery-card-title">The Interview Bypass</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "You're hired! Based on your LinkedIn profile, we'd like to offer you the position immediately. No interview necessary. Salary: $95,000. Please sign the attached offer letter and return with your personal details."
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal red">No Interview</span>
+          <span class="gallery-signal orange">Too-Good Salary</span>
+          <span class="gallery-signal red">Personal Info Request</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> Legitimate employers always interview. Instant offers are designed to rush you past due diligence.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> A real company will never offer a position without at least one conversation &mdash; hiring costs too much to skip vetting.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- 7. The MLM Disguise -->
+      <div class="gallery-card severity-critical reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">🔺</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #7</div>
+            <div class="gallery-card-title">The MLM Disguise</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "Entrepreneurial opportunity! Be your own boss. Unlimited earning potential with our team. Initial investment of $500 for your starter kit. Build your downline and earn passive income!"
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal red">Upfront Payment</span>
+          <span class="gallery-signal red">Guaranteed Income</span>
+          <span class="gallery-signal red">MLM Language</span>
+          <span class="gallery-signal blue">Vague Description</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> Multi-level marketing schemes disguised as jobs. You pay to "work" and are pressured to recruit others.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> Words like "downline," "starter kit," and "be your own boss" are MLM hallmarks, not job offer language.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- 8. The Fake Remote Job -->
+      <div class="gallery-card severity-high reveal">
+        <div class="gallery-card-header">
+          <div class="gallery-card-icon">📱</div>
+          <div class="gallery-card-title-group">
+            <div class="gallery-card-number">Pattern #8</div>
+            <div class="gallery-card-title">The Fake Remote Job</div>
+          </div>
+        </div>
+        <div class="gallery-example">
+          "100% Remote Customer Service Representative. Any location. $35/hr. No experience needed. Flexible hours. Apply by texting 'HIRED' to +1-555-0123 on WhatsApp/Telegram."
+        </div>
+        <div class="gallery-signals">
+          <span class="gallery-signal red">Suspicious Contact</span>
+          <span class="gallery-signal orange">No Experience Needed</span>
+          <span class="gallery-signal orange">Too-Good Salary</span>
+          <span class="gallery-signal red">WFH Unrealistic Pay</span>
+        </div>
+        <div class="gallery-card-body">
+          <div class="gallery-danger">
+            <div class="gallery-danger-icon">!</div>
+            <p><strong>Why it's dangerous:</strong> Moves communication to unmonitored channels where there's no fraud protection or accountability.</p>
+          </div>
+          <div class="gallery-tip">
+            <div class="gallery-tip-icon">?</div>
+            <p><strong>How to spot it:</strong> Legitimate employers use company email and formal application portals, never WhatsApp or Telegram for hiring.</p>
+          </div>
+        </div>
+        <div class="gallery-card-footer">
+          <a href="analyze.html" class="gallery-try-link">Try analyzing this pattern yourself <span class="arrow">&rarr;</span></a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- CTA SECTION -->
+<section class="gallery-cta">
+  <div class="container">
+    <div class="reveal">
+      <h2>Think You've Found a Scam?</h2>
+      <p>Paste any job posting into our analyzer and get an instant AI-powered risk score with a full signal breakdown.</p>
+      <div class="gallery-cta-actions">
+        <a href="analyze.html" class="btn btn-primary">🔍 Analyze a Posting</a>
+        <a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener" class="btn btn-secondary">⭐ Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <h3>🛡 JobSentinel</h3>
+        <p>AI-powered job scam detection. Free, open source, and constantly improving. Built to protect job seekers.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="index.html#how-it-works">How It Works</a></li>
+          <li><a href="index.html#features">Features</a></li>
+          <li><a href="gallery.html">Scam Gallery</a></li>
+          <li><a href="demo.html">Demo</a></li>
+          <li><a href="analyze.html">Analyzer</a></li>
+          <li><a href="index.html#install">Installation</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">Issue Tracker</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel/discussions" target="_blank" rel="noopener">Discussions</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          <li><a href="privacy.html">Privacy Policy</a></li>
+          <li><a href="terms.html">Terms of Service</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+        <span class="badge badge-accent">v0.9.0</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+'use strict';
+/* Mobile nav toggle */
+document.getElementById('mobileToggle').addEventListener('click', function () {
+  const nav = document.getElementById('navLinks');
+  const expanded = nav.classList.toggle('open');
+  this.setAttribute('aria-expanded', expanded);
+});
+
+/* Scroll reveal */
+const revealObserver = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('visible'); revealObserver.unobserve(e.target); }
+  });
+}, { threshold: 0.08 });
+document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+</script>
+<script type="module" src="analyze-bridge.js"></script>
+</body>
+</html>
