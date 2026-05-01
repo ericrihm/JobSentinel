@@ -182,6 +182,10 @@ class DetectionFlywheel:
         self.weight_tracker = SignalWeightTracker()
         self._cusum = CUSUMDetector(target=0.0, slack=0.5, threshold=5.0)
         self._cycle_count: int = 0
+        self._last_regression_response: dict | None = None
+        self._alert_callbacks: list[callable] = []
+        # Register the default file-based alert
+        self._alert_callbacks.append(self._default_alert)
         # Initialise CUSUM baseline from existing accuracy if available
         self._init_cusum_baseline()
 
@@ -255,6 +259,11 @@ class DetectionFlywheel:
                 deprecated.append(row["pattern_id"])
             else:
                 retained.append(row["pattern_id"])
+
+        # Invalidate the learned-weight cache so scorer picks up any
+        # weight changes from pattern promotion/deprecation immediately.
+        from sentinel import scorer
+        scorer._reset_learned_weights_cache()
 
         return {
             "promoted": promoted,
@@ -405,6 +414,34 @@ class DetectionFlywheel:
             "cusum_statistic": regression.get("cusum_statistic", 0.0),
         }
 
+        # --- Regression response ---
+        if metrics["regression_alarm"]:
+            from sentinel import scorer
+
+            logger.warning("Regression detected — triggering automatic weight recalibration")
+
+            # Re-run pattern evolution to promote/deprecate based on fresh data
+            self.evolve_patterns()
+
+            # Invalidate stale learned-weight cache
+            scorer._reset_learned_weights_cache()
+
+            # Record regression response details
+            self._last_regression_response = {
+                "cycle": self._cycle_count,
+                "precision": metrics["precision"],
+                "cusum_statistic": metrics["cusum_statistic"],
+                "action": "weight_recalibration",
+                "responded_at": _now_iso(),
+            }
+
+            # Fire all registered alert callbacks
+            for cb in self._alert_callbacks:
+                try:
+                    cb(metrics)
+                except Exception:
+                    logger.exception("Regression alert callback failed: %s", cb)
+
         self.db.save_flywheel_metrics(metrics)
 
         logger.info(
@@ -466,6 +503,23 @@ class DetectionFlywheel:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def on_regression(self, callback) -> None:
+        """Register a callback for regression alerts. callback(metrics_dict) -> None."""
+        self._alert_callbacks.append(callback)
+
+    def _default_alert(self, metrics: dict) -> None:
+        """Write regression alert to ~/.sentinel/alerts.log"""
+        import os
+
+        alert_path = os.path.expanduser("~/.sentinel/alerts.log")
+        os.makedirs(os.path.dirname(alert_path), exist_ok=True)
+        with open(alert_path, "a") as f:
+            f.write(
+                f"[{datetime.now(UTC).isoformat()}] REGRESSION ALARM: "
+                f"precision={metrics.get('precision', 'N/A')}, "
+                f"cusum={metrics.get('cusum_statistic', 'N/A')}\n"
+            )
 
     def _init_cusum_baseline(self) -> None:
         """Set the CUSUM target to the current overall precision from DB."""

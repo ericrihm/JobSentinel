@@ -980,9 +980,43 @@ def ingest_history(ctx, limit):
 @click.option("--location", "-l", default="", help="Location filter")
 @click.option("--flywheel/--no-flywheel", default=True, help="Run flywheel after ingestion")
 @click.option("--no-ai", is_flag=True, help="Disable AI")
+@click.option("--loop", "loop_count", default=1, help="Number of cycles (0=unlimited)")
+@click.option("--interval", default=3600, help="Seconds between cycles")
 @click.pass_context
-def auto(ctx, queries, location, flywheel, no_ai):
-    """Run full automated cycle: ingest from all sources → score → learn → evolve."""
+def auto(ctx, queries, location, flywheel, no_ai, loop_count, interval):
+    """Run full automated cycle: ingest from all sources -> score -> learn -> evolve."""
+    # Multi-cycle mode: delegate to SentinelDaemon
+    if loop_count != 1:
+        from sentinel.daemon import SentinelDaemon
+
+        if not ctx.obj.get("json"):
+            click.echo(click.style(
+                f"  Starting daemon loop: {loop_count or 'unlimited'} cycles, {interval}s interval",
+                fg="cyan",
+            ))
+
+        daemon = SentinelDaemon(
+            queries=list(queries),
+            location=location,
+            interval_seconds=interval,
+            use_ai=not no_ai,
+            max_cycles=loop_count,
+        )
+        results = daemon.run()
+
+        for r in results:
+            if ctx.obj.get("json"):
+                import dataclasses
+                click.echo(json.dumps(dataclasses.asdict(r), indent=2, default=str))
+            else:
+                click.echo(f"  Cycle {r.cycle_number}: "
+                           f"{r.jobs_new} new jobs, "
+                           f"{r.high_risk_count} high-risk, "
+                           f"regression={r.regression_detected}, "
+                           f"{r.duration_seconds:.1f}s")
+        return
+
+    # Single-cycle mode: original behavior
     try:
         from sentinel.ingest import IngestionPipeline
     except ImportError as exc:
@@ -1040,6 +1074,70 @@ def auto(ctx, queries, location, flywheel, no_ai):
         click.echo(click.style("  Flywheel cycle ran after ingestion.", fg="cyan"))
 
     click.echo("")
+
+
+# ---------------------------------------------------------------------------
+# daemon
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--queries", "-q", multiple=True,
+              default=("software engineer", "data analyst", "remote work from home"),
+              help="Search queries to run each cycle")
+@click.option("--location", "-l", default="", help="Location filter")
+@click.option("--interval", default=3600, help="Seconds between cycles")
+@click.option("--max-cycles", default=0, help="Max cycles (0=unlimited)")
+@click.option("--no-ai", is_flag=True, help="Disable AI escalation")
+@click.pass_context
+def daemon(ctx, queries, location, interval, max_cycles, no_ai):
+    """Run Sentinel as a continuous autonomous daemon."""
+    from sentinel.daemon import SentinelDaemon
+
+    if not ctx.obj.get("json"):
+        click.echo(click.style(
+            f"  Sentinel daemon starting: {max_cycles or 'unlimited'} cycles, {interval}s interval",
+            fg="cyan",
+            bold=True,
+        ))
+        click.echo(click.style("  Press CTRL+C to stop gracefully.", fg="bright_black"))
+        click.echo("")
+
+    d = SentinelDaemon(
+        queries=list(queries),
+        location=location,
+        interval_seconds=interval,
+        use_ai=not no_ai,
+        max_cycles=max_cycles,
+    )
+    results = d.run()
+
+    if ctx.obj.get("json"):
+        import dataclasses
+        click.echo(json.dumps(
+            [dataclasses.asdict(r) for r in results],
+            indent=2,
+            default=str,
+        ))
+    else:
+        click.echo("")
+        click.echo(click.style("  Daemon Summary", bold=True))
+        click.echo("  " + "─" * 60)
+        for r in results:
+            status = click.style("REGRESSION", fg="red") if r.regression_detected \
+                else click.style("OK", fg="green")
+            click.echo(
+                f"  Cycle {r.cycle_number:>3}: "
+                f"fetched={r.jobs_fetched:>4}  new={r.jobs_new:>4}  "
+                f"high_risk={r.high_risk_count:>3}  "
+                f"flywheel={'Y' if r.flywheel_ran else 'N'}  "
+                f"innovation={'Y' if r.innovation_ran else 'N'}  "
+                f"[{status}]  {r.duration_seconds:.1f}s"
+            )
+        total_new = sum(r.jobs_new for r in results)
+        total_high = sum(r.high_risk_count for r in results)
+        click.echo("  " + "─" * 60)
+        click.echo(f"  Total: {len(results)} cycles, {total_new} new jobs, {total_high} high-risk")
+        click.echo("")
 
 
 @main.command()
