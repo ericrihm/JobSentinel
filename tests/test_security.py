@@ -2,8 +2,10 @@
 
 Covers:
 - Input validation constraints on API request models
+- Script tag rejection across all string fields
+- Parameterized query safety in db.py
+- HTML sanitization in parse_job_text() and parse_job_html()
 - Command injection prevention in check_domain_age()
-- HTML sanitization in parse_job_html()
 """
 
 from __future__ import annotations
@@ -265,3 +267,105 @@ class TestHTMLSanitization:
         # The raw_html stored on the job should not contain the script payload
         raw = getattr(job, "raw_html", "") or ""
         assert "document.cookie" not in raw
+
+    def test_parse_job_text_sanitizes_script_payload(self):
+        """parse_job_text() must strip script tags before regex extraction."""
+        from sentinel.scanner import parse_job_text
+        text = (
+            "Position: Senior Engineer\n"
+            '<script>fetch("/steal?c=" + document.cookie)</script>\n'
+            "Salary: $150,000 - $180,000\n"
+            "Location: Remote\n"
+        )
+        job = parse_job_text(text, title="Senior Engineer", company="Acme")
+        assert "document.cookie" not in job.description
+        assert "<script" not in job.description
+        # Legitimate fields should still parse correctly
+        assert job.salary_min == 150000
+        assert job.salary_max == 180000
+
+
+# ---------------------------------------------------------------------------
+# TestParameterizedQueries
+# ---------------------------------------------------------------------------
+
+class TestParameterizedQueries:
+    """Verify db.py methods use parameter binding so SQL injection is impossible."""
+
+    def _db(self, tmp_path):
+        from sentinel.db import SentinelDB
+        return SentinelDB(path=str(tmp_path / "test.db"))
+
+    def test_save_job_treats_url_as_data_not_sql(self, tmp_path):
+        """A URL containing SQL syntax must be stored verbatim, not executed."""
+        db = self._db(tmp_path)
+        evil = "https://example.com/job/1'; DROP TABLE jobs; --"
+        db.save_job({"url": evil, "title": "Engineer", "company": "Acme"})
+        # If the DROP fired, this fetchone would raise OperationalError
+        row = db.get_job(evil)
+        assert row is not None
+        assert row["url"] == evil
+        db.close()
+
+    def test_get_job_url_with_quotes_not_executed(self, tmp_path):
+        """get_job() must accept URLs with single quotes without SQL errors."""
+        db = self._db(tmp_path)
+        url = "https://example.com/job/2"
+        db.save_job({"url": url, "title": "QA"})
+        # Lookup with an injection attempt should simply return None, not error
+        result = db.get_job("' OR 1=1 --")
+        assert result is None
+        # The real row is still retrievable
+        assert db.get_job(url) is not None
+        db.close()
+
+    def test_save_report_with_injection_payload_persists(self, tmp_path):
+        """Report reason containing SQL must round-trip as data."""
+        db = self._db(tmp_path)
+        url = "https://example.com/job/3"
+        db.save_job({"url": url, "title": "PM"})
+        evil_reason = "asked for $$ '; DELETE FROM jobs; --"
+        db.save_report({
+            "url": url, "is_scam": True, "reason": evil_reason,
+            "our_prediction": 0.5, "was_correct": True,
+        })
+        # Jobs table should still exist with the row intact
+        assert db.get_job(url) is not None
+        reports = db.get_reports(limit=5)
+        assert any(r["reason"] == evil_reason for r in reports)
+        db.close()
+
+    def test_search_jobs_with_quote_payload_does_not_error(self, tmp_path):
+        """FTS5 search must escape quotes and refuse to break out of the param."""
+        db = self._db(tmp_path)
+        db.save_job({
+            "url": "https://example.com/j", "title": "Engineer",
+            "company": "Acme", "description": "build things",
+        })
+        # Quote-laden query previously crashed FTS5; should return safely.
+        results = db.search_jobs('Engineer" OR 1=1 --')
+        assert isinstance(results, list)
+        db.close()
+
+    def test_save_pattern_with_injection_pattern_id(self, tmp_path):
+        """Pattern IDs containing SQL syntax must be stored as data."""
+        db = self._db(tmp_path)
+        evil_id = "p1'; DROP TABLE patterns; --"
+        db.save_pattern({
+            "pattern_id": evil_id, "name": "Test",
+            "description": "x", "category": "red_flag",
+        })
+        rows = db.get_patterns("active")
+        assert any(p["pattern_id"] == evil_id for p in rows)
+        db.close()
+
+    def test_save_company_with_injection_name(self, tmp_path):
+        """Company names containing SQL syntax must round-trip as data."""
+        db = self._db(tmp_path)
+        evil_name = "Acme'; DROP TABLE companies; --"
+        db.save_company({"name": evil_name, "domain": "acme.example"})
+        # If the DROP executed, this would raise OperationalError
+        row = db.get_company(evil_name)
+        assert row is not None
+        assert row["name"] == evil_name
+        db.close()
