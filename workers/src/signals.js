@@ -1,5 +1,5 @@
 /**
- * signals.js — 44 scam signal detectors ported from Python
+ * signals.js — 54 scam signal detectors ported from Python
  *
  * Each detector receives a job object and returns a signal object or null.
  * Signal object shape: { name, category, weight, confidence, detail, evidence }
@@ -428,6 +428,10 @@ export const ALL_SIGNALS = [
   checkGovernmentImpersonation,
   checkEvolvedMlm,
   checkKnownScamEntity,
+  checkBrandImpersonationUrl,
+  checkUrlReputationBad,
+  checkSuspiciousRedirectChain,
+  checkCompanyNotFound,
   // Warnings
   checkSalaryAnomaly,
   checkVagueDescription,
@@ -440,9 +444,13 @@ export const ALL_SIGNALS = [
   checkPhoneAnomaly,
   checkCompensationRedFlags,
   checkCompanyNameSuspicious,
+  checkSuspiciousCompanyNameEnhanced,
   checkSurveyClickfarm,
   checkContactChannelSuspicious,
   checkFakeStaffingAgency,
+  checkHighRiskTld,
+  checkVirtualOfficeAddress,
+  checkCompanyDomainMismatch,
   // Ghost job
   checkStalePosting,
   checkRepostPattern,
@@ -451,6 +459,7 @@ export const ALL_SIGNALS = [
   checkRoleTitleGeneric,
   // Structural
   checkSuspiciousLinks,
+  checkShortenedUrl,
   checkAiGeneratedContent,
   // Positive
   checkCompanyDetails,
@@ -461,6 +470,7 @@ export const ALL_SIGNALS = [
   checkProfessionalApplicationProcess,
   checkEstablishedCompany,
   checkDetailedRequirements,
+  checkCompanyVerified,
 ];
 
 /**
@@ -1171,4 +1181,566 @@ export function checkDetailedRequirements(job) {
     detail: 'Detailed, specific requirements indicate a genuine role',
     evidence: evidenceParts.join(', '),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Link Analyzer Signals (ported from sentinel/link_analyzer.py)
+// ---------------------------------------------------------------------------
+
+// URL shortener domains (offline — no network calls)
+const SHORTENER_DOMAINS = new Set([
+  'bit.ly', 'tinyurl.com', 't.co', 'ow.ly', 'goo.gl',
+  'buff.ly', 'short.io', 'rebrand.ly', 'cutt.ly', 'tiny.cc',
+  'is.gd', 'v.gd', 'shrtco.de', 'shorturl.at', 'clck.ru', 'lnkd.in',
+]);
+
+// High-risk TLDs (Spamhaus / SURBL research)
+const HIGH_RISK_TLDS = new Set([
+  '.xyz', '.top', '.club', '.work', '.click', '.link',
+  '.info', '.biz', '.online', '.site', '.live',
+]);
+
+// Known brands for impersonation detection (Levenshtein)
+const BRAND_NAMES = [
+  'google', 'linkedin', 'amazon', 'microsoft', 'apple',
+  'facebook', 'meta', 'netflix', 'twitter', 'instagram',
+  'paypal', 'ebay', 'walmart', 'indeed', 'glassdoor',
+  'monster', 'ziprecruiter', 'workday', 'salesforce',
+];
+
+// Local blocklist patterns for url_reputation_bad (static, no network)
+const LOCAL_BLOCKLIST = [
+  /jobs?[-.]?(apply|offer|hire|work)\.(?:xyz|top|click|live|site|online)/i,
+  /work[-.]?from[-.]?home\d*\./i,
+  /earn[-.]?\$\d+/i,
+  /easy[-.]?money\d*\./i,
+  /get[-.]?hired[-.]?(now|today|fast)/i,
+  /career[-.]?opportunity\d+\./i,
+  /(apply|recruit)[-_]?[a-z]{6,12}\.(?:xyz|top|click|biz|info)/i,
+];
+
+// URL extraction regex (matches full URLs, shortener paths, and bare domains)
+const RE_URL_EXTRACT = /https?:\/\/[a-zA-Z0-9\-._~:/?#[\]@!$&'()*+,;=%]+|(?:bit\.ly|tinyurl\.com|t\.co|ow\.ly|goo\.gl|buff\.ly|short\.io|rebrand\.ly|cutt\.ly|tiny\.cc|is\.gd|v\.gd|shrtco\.de|lnkd\.in)\/[a-zA-Z0-9_\-/?=&%+.#]+|(?<![/@])(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+(?:com|net|org|io|co|ai|dev|app|jobs|work|xyz|top|club|click|link|info|biz|online|site|live|me|us|uk|ca|au|de)(?:\/[a-zA-Z0-9_\-/?=&%+.#]*)?/gi;
+
+/**
+ * Levenshtein distance — same algorithm used in Python signals.py
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i];
+    for (let j = 1; j <= b.length; j++) {
+      curr.push(Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] !== b[j - 1] ? 1 : 0),
+      ));
+    }
+    prev = curr;
+  }
+  return prev[prev.length - 1];
+}
+
+/**
+ * Parse the hostname from a URL, lowercase, strip www.
+ * @param {string} url
+ * @returns {string}
+ */
+function parseDomain(url) {
+  if (!url) return '';
+  let u = url;
+  if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'http://' + u;
+  try {
+    const host = new URL(u).hostname || '';
+    return host.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Return the TLD (with leading dot) from a domain, e.g. '.xyz'
+ * @param {string} domain
+ * @returns {string}
+ */
+function getTld(domain) {
+  const idx = domain.lastIndexOf('.');
+  return idx >= 0 ? domain.slice(idx) : '';
+}
+
+/**
+ * Extract deduplicated URLs from text.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function extractUrls(text) {
+  const raw = text.match(RE_URL_EXTRACT) || [];
+  const seen = new Set();
+  const results = [];
+  for (let url of raw) {
+    url = url.replace(/[.,;:!?"')]+$/, '');
+    if (url && !seen.has(url)) {
+      seen.add(url);
+      results.push(url);
+    }
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Signal LA-1: shortened_url  (STRUCTURAL, weight 0.45)
+// ---------------------------------------------------------------------------
+
+export function checkShortenedUrl(job) {
+  const text = fullText(job);
+  const urls = extractUrls(text);
+  for (const url of urls) {
+    const domain = parseDomain(url);
+    if (SHORTENER_DOMAINS.has(domain)) {
+      return {
+        name: 'shortened_url',
+        category: 'structural',
+        weight: 0.45,
+        confidence: 0.80,
+        detail: 'Job posting contains a URL shortener link — destination is hidden',
+        evidence: url,
+      };
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal LA-2: high_risk_tld  (WARNING, weight 0.55)
+// ---------------------------------------------------------------------------
+
+export function checkHighRiskTld(job) {
+  const text = fullText(job);
+  const urls = extractUrls(text);
+  for (const url of urls) {
+    const domain = parseDomain(url);
+    if (!domain) continue;
+    const tld = getTld(domain);
+    if (HIGH_RISK_TLDS.has(tld)) {
+      return {
+        name: 'high_risk_tld',
+        category: 'warning',
+        weight: 0.55,
+        confidence: 0.70,
+        detail: `URL uses a high-risk TLD (${tld})`,
+        evidence: url,
+      };
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal LA-3: brand_impersonation_url  (RED FLAG, weight 0.85)
+// Offline Levenshtein check — no network needed
+// ---------------------------------------------------------------------------
+
+export function checkBrandImpersonationUrl(job) {
+  const text = fullText(job);
+  const urls = extractUrls(text);
+  for (const url of urls) {
+    const domain = parseDomain(url);
+    if (!domain) continue;
+
+    // Registered label = second-to-last part (strip TLD)
+    const parts = domain.split('.');
+    const registeredLabel = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+
+    for (const brand of BRAND_NAMES) {
+      if (registeredLabel === brand) break; // exact match = real brand
+      const dist = levenshtein(registeredLabel, brand);
+      if (dist > 0 && dist <= 2) {
+        return {
+          name: 'brand_impersonation_url',
+          category: 'red_flag',
+          weight: 0.85,
+          confidence: 0.78,
+          detail: `URL domain appears to impersonate '${brand}' (domain: ${domain})`,
+          evidence: url,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal LA-4: url_reputation_bad  (RED FLAG, weight 0.90)
+// Offline local blocklist only (no Safe Browsing / PhishTank API calls)
+// ---------------------------------------------------------------------------
+
+export function checkUrlReputationBad(job) {
+  const text = fullText(job);
+  const urls = extractUrls(text);
+  for (const url of urls) {
+    for (const pattern of LOCAL_BLOCKLIST) {
+      if (pattern.test(url)) {
+        return {
+          name: 'url_reputation_bad',
+          category: 'red_flag',
+          weight: 0.90,
+          confidence: 0.75,
+          detail: 'URL matches a local scam-site pattern',
+          evidence: url,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal LA-5: suspicious_redirect_chain  (RED FLAG, weight 0.72)
+// Offline heuristic: detect multi-hop redirect patterns in text
+// (full redirect following is only possible with network; here we detect
+// explicit redirect/tracking language combined with shortener links)
+// ---------------------------------------------------------------------------
+
+const RE_REDIRECT_LANGUAGE = /\b(click here to (apply|continue|proceed)|follow (this |the )?link to (apply|continue|access)|you will be (redirected|forwarded)|apply (via|through|at) the (link|url) (below|above|here))\b/i;
+
+export function checkSuspiciousRedirectChain(job) {
+  const text = fullText(job);
+  const urls = extractUrls(text);
+
+  // Fire if there's a shortener AND explicit redirect/apply language
+  const hasShortener = urls.some(url => SHORTENER_DOMAINS.has(parseDomain(url)));
+  const hasRedirectLanguage = RE_REDIRECT_LANGUAGE.test(text);
+
+  if (hasShortener && hasRedirectLanguage) {
+    const shortenerUrl = urls.find(url => SHORTENER_DOMAINS.has(parseDomain(url)));
+    return {
+      name: 'suspicious_redirect_chain',
+      category: 'red_flag',
+      weight: 0.72,
+      confidence: 0.60,
+      detail: 'Posting uses a URL shortener combined with redirect/apply language — hides true destination',
+      evidence: shortenerUrl || 'shortener + redirect language detected',
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Company Verifier Signals (ported from sentinel/company_verifier.py)
+// ---------------------------------------------------------------------------
+
+// Known legitimate companies (subset of Python's _KNOWN_COMPANIES)
+const KNOWN_COMPANIES = new Set([
+  // Big Tech
+  'google', 'alphabet', 'meta', 'facebook', 'apple', 'amazon', 'microsoft',
+  'netflix', 'nvidia', 'intel', 'ibm', 'oracle', 'salesforce', 'adobe',
+  'sap', 'vmware', 'cisco', 'qualcomm', 'broadcom', 'amd',
+  // Cloud & Infra
+  'aws', 'cloudflare', 'fastly', 'twilio', 'okta', 'datadog', 'splunk',
+  'pagerduty', 'elastic', 'mongodb', 'hashicorp', 'confluent',
+  'databricks', 'snowflake', 'palantir', 'digitalocean',
+  // Fintech & Finance
+  'stripe', 'square', 'block', 'paypal', 'coinbase', 'robinhood', 'plaid',
+  'jpmorgan', 'jp morgan', 'goldman sachs', 'morgan stanley', 'wells fargo',
+  'bank of america', 'citibank', 'citi', 'blackrock', 'fidelity', 'vanguard',
+  'american express', 'visa', 'mastercard', 'capital one',
+  // E-commerce & Delivery
+  'shopify', 'ebay', 'etsy', 'wayfair', 'doordash', 'instacart', 'uber eats',
+  'uber', 'lyft', 'airbnb',
+  // Enterprise SaaS
+  'workday', 'servicenow', 'zendesk', 'hubspot', 'atlassian', 'slack',
+  'zoom', 'dropbox', 'box', 'docusign', 'asana', 'figma',
+  // Security
+  'crowdstrike', 'palo alto networks', 'fortinet', 'zscaler', 'sentinelone',
+  'cyberark', 'rapid7', 'qualys', 'tenable', 'proofpoint',
+  // Dev Tools
+  'github', 'gitlab', 'jfrog', 'jetbrains', 'postman', 'new relic',
+  // Healthcare
+  'unitedhealth', 'anthem', 'aetna', 'cigna', 'humana', 'cvs health',
+  'johnson & johnson', 'pfizer', 'moderna', 'gilead', 'biogen',
+  'abbvie', 'merck', 'eli lilly', 'amgen', 'roche', 'novartis',
+  // Media
+  'disney', 'comcast', 'spotify', 'tiktok', 'bytedance', 'snapchat',
+  'twitter', 'reddit', 'pinterest', 'linkedin',
+  // Consulting
+  'mckinsey', 'bain', 'bcg', 'deloitte', 'pwc', 'kpmg', 'ey',
+  'ernst & young', 'accenture', 'booz allen', 'infosys', 'cognizant',
+  // Retail
+  'walmart', 'target', 'costco', 'kroger', 'home depot',
+  'best buy', 'walgreens', 'cvs',
+  // Telecom
+  'at&t', 'verizon', 't-mobile', 'charter',
+  // Aerospace & Defense
+  'lockheed martin', 'raytheon', 'boeing', 'northrop grumman', 'spacex',
+  // Automotive
+  'tesla', 'ford', 'general motors', 'gm', 'toyota', 'honda',
+  // AI / ML
+  'openai', 'anthropic', 'cohere', 'hugging face', 'scale ai', 'deepmind',
+  // Logistics
+  'fedex', 'ups', 'dhl', 'usps',
+  // Travel
+  'marriott', 'hilton', 'hyatt', 'united airlines', 'delta', 'american airlines',
+  // HR / Recruiting
+  'adp', 'paychex', 'bamboohr', 'greenhouse', 'lever',
+]);
+
+// Brand names for company misspelling detection
+const CV_BRAND_NAMES = [
+  'google', 'amazon', 'microsoft', 'apple', 'facebook', 'meta',
+  'netflix', 'tesla', 'paypal', 'walmart', 'target', 'costco',
+  'deloitte', 'accenture', 'ibm', 'oracle', 'salesforce', 'nvidia',
+];
+
+// Virtual office / PO box patterns
+const RE_VIRTUAL_OFFICE = /\b(regus|wework|we work|iws|intelligent office|davinci|opus virtual|servcorp|alliance virtual|virtual office|shared office|coworking|co-working|executive suites|postal connections|ups store|mailbox|pmb \d|suite \d{3,4}(?![a-z]))\b/i;
+const RE_PO_BOX = /\b(p\.?\s*o\.?\s*box|post\s+office\s+box|po\s+box)\b/i;
+
+// Generic buzzword suffix (company name heuristic)
+const RE_GENERIC_SUFFIX_CV = /^[A-Za-z]{3,20}\s+(Solutions|Global|International|Enterprises?|Worldwide|Unlimited|Ventures?|Associates?|Consulting|Services?|Group|Partners?|Network|Systems|Resources|Staffing|Placement|Opportunities|Connections)$/i;
+
+// Random character patterns (scam company names)
+const RE_RANDOM_CHARS = /[A-Z]{4,}\d|[A-Z]\d[A-Z]\d|[0-9]{3,}[A-Za-z]/;
+
+// Excessive entity suffixing (e.g. "MyBiz LLC LLC")
+const RE_EXCESSIVE_ENTITY = /\b(LLC|Inc|Corp|Ltd|Co\.?)\s*,?\s*(LLC|Inc|Corp|Ltd|Co\.?)\b/i;
+
+/**
+ * Return the closest brand if company name looks like a misspelling (Levenshtein).
+ * @param {string} name
+ * @returns {string|null}
+ */
+function isMisspelledBrand(name) {
+  // Strip common entity suffixes (LLC, Inc, Corp, Ltd, Co) before comparing
+  const stripped = name.replace(/\s+(llc|inc\.?|corp\.?|ltd\.?|co\.?|plc|llp|lp)\s*$/i, '').trim();
+  const normalized = stripped.toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const brand of CV_BRAND_NAMES) {
+    const threshold = Math.max(1, Math.floor(brand.length / 4));
+    const dist = levenshtein(normalized, brand);
+    if (dist > 0 && dist <= threshold) return brand;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal CV-1: company_not_found  (RED FLAG, weight 0.75)
+// Offline heuristic: company name fails all legitimacy checks
+// ---------------------------------------------------------------------------
+
+export function checkCompanyNotFound(job) {
+  const name = String(job.company || '').trim();
+  if (!name) return null;
+
+  // If it's in our known-good list, definitely not "not found"
+  const nameLower = name.toLowerCase();
+  if (KNOWN_COMPANIES.has(nameLower)) return null;
+  // Prefix/suffix match for variants like "Google LLC"
+  for (const known of KNOWN_COMPANIES) {
+    if (nameLower.startsWith(known + ' ') || nameLower.endsWith(' ' + known)) return null;
+  }
+
+  // Fire if the name has multiple strong suspicious indicators
+  let suspicionScore = 0;
+  if (RE_RANDOM_CHARS.test(name)) suspicionScore += 2;
+  if (RE_EXCESSIVE_ENTITY.test(name)) suspicionScore += 1;
+  if (name === name.toUpperCase() && name.length > 4 && /[A-Z]{5,}/.test(name)) suspicionScore += 1;
+  if (!job.company_linkedin_url || !String(job.company_linkedin_url).trim()) suspicionScore += 1;
+
+  if (suspicionScore >= 3) {
+    return {
+      name: 'company_not_found',
+      category: 'red_flag',
+      weight: 0.75,
+      confidence: 0.65,
+      detail: `Company '${name}' shows multiple indicators of being non-existent or fabricated`,
+      evidence: name,
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal CV-2: company_domain_mismatch  (WARNING, weight 0.65)
+// Offline: check if description contains a URL whose domain doesn't
+// correspond to the company name (fuzzy match, no DNS)
+// ---------------------------------------------------------------------------
+
+export function checkCompanyDomainMismatch(job) {
+  const name = String(job.company || '').trim();
+  if (!name || name.length < 3) return null;
+
+  const text = fullText(job);
+  const urls = extractUrls(text);
+  if (urls.length === 0) return null;
+
+  // Normalize company name for comparison
+  const companyNorm = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Count URLs that don't match the company name
+  let mismatchCount = 0;
+  let mismatchExample = '';
+  for (const url of urls) {
+    const domain = parseDomain(url);
+    if (!domain) continue;
+    // Skip known shorteners and personal email domains
+    if (SHORTENER_DOMAINS.has(domain)) continue;
+    const domainNorm = domain.replace(/[^a-z0-9]/g, '');
+    if (!domainNorm.includes(companyNorm) && !companyNorm.includes(domainNorm.slice(0, Math.max(4, companyNorm.length)))) {
+      mismatchCount++;
+      if (!mismatchExample) mismatchExample = domain;
+    }
+  }
+
+  // Only fire if there are URLs AND none match the company
+  if (mismatchCount > 0 && mismatchCount === urls.length) {
+    return {
+      name: 'company_domain_mismatch',
+      category: 'warning',
+      weight: 0.65,
+      confidence: 0.55,
+      detail: `Company name '${name}' does not match any URLs in the posting (e.g. ${mismatchExample})`,
+      evidence: `name=${name}, domain=${mismatchExample}`,
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal CV-3: virtual_office_address  (WARNING, weight 0.45)
+// ---------------------------------------------------------------------------
+
+export function checkVirtualOfficeAddress(job) {
+  const location = String(job.location || '').trim();
+  if (!location) return null;
+
+  if (RE_VIRTUAL_OFFICE.test(location)) {
+    return {
+      name: 'virtual_office_address',
+      category: 'warning',
+      weight: 0.45,
+      confidence: 0.65,
+      detail: `Location '${location}' appears to be a virtual office address commonly used by scammers`,
+      evidence: location,
+    };
+  }
+  if (RE_PO_BOX.test(location)) {
+    return {
+      name: 'virtual_office_address',
+      category: 'warning',
+      weight: 0.45,
+      confidence: 0.55,
+      detail: `Location '${location}' is a PO Box — no physical office`,
+      evidence: location,
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal CV-4: suspicious_company_name  (WARNING, weight 0.60)
+// Enhanced version with Levenshtein brand-misspelling detection
+// ---------------------------------------------------------------------------
+
+export function checkSuspiciousCompanyNameEnhanced(job) {
+  const name = String(job.company || '').trim();
+  if (!name) return null;
+
+  // Skip if it's a known legitimate company
+  const nameLower = name.toLowerCase();
+  if (KNOWN_COMPANIES.has(nameLower)) return null;
+
+  // Misspelled brand name (Levenshtein)
+  const misspelled = isMisspelledBrand(name);
+  if (misspelled) {
+    return {
+      name: 'suspicious_company_name',
+      category: 'warning',
+      weight: 0.60,
+      confidence: 0.70,
+      detail: `Company name '${name}' looks like a misspelling of '${misspelled}'`,
+      evidence: `${name} ≈ ${misspelled}`,
+    };
+  }
+
+  // Random character pattern
+  if (RE_RANDOM_CHARS.test(name)) {
+    return {
+      name: 'suspicious_company_name',
+      category: 'warning',
+      weight: 0.60,
+      confidence: 0.55,
+      detail: `Company name '${name}' contains random-character patterns`,
+      evidence: 'random_char_pattern',
+    };
+  }
+
+  // Excessive entity suffixing
+  if (RE_EXCESSIVE_ENTITY.test(name)) {
+    return {
+      name: 'suspicious_company_name',
+      category: 'warning',
+      weight: 0.60,
+      confidence: 0.55,
+      detail: `Company name '${name}' has duplicate entity suffixes (e.g. LLC LLC)`,
+      evidence: 'excessive_entity_suffix',
+    };
+  }
+
+  // Generic single-word + buzzword suffix
+  const parts = name.split(/\s+/);
+  if (RE_GENERIC_SUFFIX_CV.test(name) && parts.length <= 3) {
+    return {
+      name: 'suspicious_company_name',
+      category: 'warning',
+      weight: 0.60,
+      confidence: 0.50,
+      detail: `Company name '${name}' matches generic buzzword pattern`,
+      evidence: 'generic_buzzword_name',
+    };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signal CV-5: company_verified  (POSITIVE, weight 0.30)
+// Offline: fires when company is in the known-companies list
+// ---------------------------------------------------------------------------
+
+export function checkCompanyVerified(job) {
+  const name = String(job.company || '').trim();
+  if (!name) return null;
+
+  const nameLower = name.toLowerCase();
+
+  if (KNOWN_COMPANIES.has(nameLower)) {
+    return {
+      name: 'company_verified',
+      category: 'positive',
+      weight: 0.30,
+      confidence: 0.75,
+      detail: `Company '${name}' is in the known-legitimate companies list`,
+      evidence: 'verification_source=known_companies_list',
+    };
+  }
+  // Prefix/suffix match for variants like "Google LLC"
+  for (const known of KNOWN_COMPANIES) {
+    if (nameLower.startsWith(known + ' ') || nameLower.endsWith(' ' + known)) {
+      return {
+        name: 'company_verified',
+        category: 'positive',
+        weight: 0.30,
+        confidence: 0.70,
+        detail: `Company '${name}' matches known-legitimate company '${known}'`,
+        evidence: `verification_source=known_companies_list, matched=${known}`,
+      };
+    }
+  }
+
+  return null;
 }

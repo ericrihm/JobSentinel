@@ -267,6 +267,315 @@ class ScamDataCollector:
         return seed[:limit]
 
     # ---------------------------------------------------------------------------
+    # 1b. Legitimate job seeds
+    # ---------------------------------------------------------------------------
+
+    def generate_legitimate_seeds(self, count: int = 15) -> list[dict]:
+        """Return realistic legitimate job postings for use as negative training examples.
+
+        These are modeled after real Fortune 500 / large-tech job listings with
+        normal salary ranges, professional descriptions, and credible employers.
+        Having labeled negatives is required for the flywheel to compute
+        precision, recall, and F1.
+
+        Returns a list of dicts matching the same schema as fetch_ftc_data():
+        title, company, description, location, is_scam=False,
+        source="seed_legitimate".
+        """
+        seeds: list[dict] = [
+            _make_job_dict(
+                title="Senior Software Engineer, Backend Infrastructure",
+                company="Google LLC",
+                description=(
+                    "Google's Core Infrastructure team is seeking a Senior Software Engineer "
+                    "to design and build large-scale distributed systems. You will work on "
+                    "storage, networking, and compute infrastructure serving billions of users. "
+                    "Requirements: 5+ years of professional software engineering experience, "
+                    "proficiency in C++, Go, or Java, strong systems-programming fundamentals, "
+                    "experience with distributed consensus protocols (Raft, Paxos) a plus. "
+                    "Compensation: $200,000–$280,000 base salary + RSU + bonus. Full healthcare, "
+                    "401(k) match, on-site meals. Interview process: recruiter screen, technical "
+                    "phone interview, four on-site rounds (coding, system design, behavioral)."
+                ),
+                location="Mountain View, CA (Hybrid)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=200000.0,
+                salary_max=280000.0,
+            ),
+            _make_job_dict(
+                title="Product Manager, AWS Developer Tools",
+                company="Amazon Web Services",
+                description=(
+                    "AWS Developer Tools is looking for an experienced Product Manager to "
+                    "own the roadmap for our CI/CD and developer productivity suite. "
+                    "You will work cross-functionally with engineering, design, and sales to "
+                    "define features, write PRDs, and drive launches. "
+                    "Qualifications: 5+ years of product management experience, technical "
+                    "background in cloud or developer tooling, strong written communication. "
+                    "Compensation: $160,000–$220,000 + RSU. Benefits include medical, dental, "
+                    "vision, 401(k), parental leave. Location: Seattle, WA or remote in the US."
+                ),
+                location="Seattle, WA (Remote-eligible)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=160000.0,
+                salary_max=220000.0,
+            ),
+            _make_job_dict(
+                title="Data Scientist II — Ads Relevance",
+                company="Meta Platforms",
+                description=(
+                    "The Ads Relevance team at Meta is hiring a Data Scientist to improve "
+                    "ad ranking models using causal inference and ML experimentation. "
+                    "You will design A/B experiments, build production ML pipelines in Python "
+                    "(PyTorch, Spark), and present findings to senior leadership. "
+                    "Requirements: MS or PhD in Statistics, ML, or related field; 3+ years "
+                    "industry experience; strong SQL; experience with large-scale experimentation. "
+                    "Compensation: $170,000–$240,000 base + RSU + annual bonus. Menlo Park, CA "
+                    "or remote. Comprehensive benefits package."
+                ),
+                location="Menlo Park, CA (Remote-eligible)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=170000.0,
+                salary_max=240000.0,
+            ),
+            _make_job_dict(
+                title="Financial Analyst, Corporate FP&A",
+                company="Microsoft Corporation",
+                description=(
+                    "Microsoft's Corporate Finance team is seeking a Financial Analyst to "
+                    "support quarterly earnings planning, variance analysis, and long-range "
+                    "financial modeling. You will build Excel/Power BI dashboards for the CFO "
+                    "organization and coordinate budget cycles across business units. "
+                    "Requirements: BA/BS in Finance, Accounting, or Economics; 2–4 years FP&A "
+                    "experience; advanced Excel and financial modeling skills; CPA or CFA a plus. "
+                    "Salary: $90,000–$120,000 + annual bonus + ESPP. Redmond, WA. Hybrid 3 days/week."
+                ),
+                location="Redmond, WA (Hybrid)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=90000.0,
+                salary_max=120000.0,
+            ),
+            _make_job_dict(
+                title="Staff UX Designer — Consumer iOS",
+                company="Apple Inc.",
+                description=(
+                    "Apple's Human Interface team is looking for a Staff UX Designer to lead "
+                    "design vision for core iOS consumer experiences. You will own end-to-end "
+                    "design from concept to pixel, collaborate with engineering and product, "
+                    "and present to Apple leadership. "
+                    "Requirements: 8+ years of UX/product design experience; expert-level Figma, "
+                    "Sketch, or equivalent; portfolio demonstrating shipped consumer products; "
+                    "experience with motion and prototyping. "
+                    "Compensation: $180,000–$250,000 base + RSU. Cupertino, CA. On-site preferred."
+                ),
+                location="Cupertino, CA (On-site)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=180000.0,
+                salary_max=250000.0,
+            ),
+            _make_job_dict(
+                title="DevOps Engineer — Platform Engineering",
+                company="Salesforce",
+                description=(
+                    "Salesforce Platform Engineering is hiring a DevOps Engineer to build and "
+                    "maintain CI/CD pipelines, Kubernetes-based infrastructure, and internal "
+                    "developer platforms on AWS and GCP. "
+                    "You will work with teams across the company to reduce deployment friction "
+                    "and improve observability. "
+                    "Requirements: 4+ years DevOps/SRE experience; strong Kubernetes, Terraform, "
+                    "and Helm; experience with GitHub Actions or Jenkins; Python or Go scripting. "
+                    "Salary: $140,000–$185,000 + equity. Remote USA or San Francisco, CA. "
+                    "Full medical/dental/vision, 401(k) match, equity refresh."
+                ),
+                location="San Francisco, CA (Remote-eligible)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=140000.0,
+                salary_max=185000.0,
+            ),
+            _make_job_dict(
+                title="Account Executive, Enterprise Sales",
+                company="Databricks",
+                description=(
+                    "Databricks is looking for an Enterprise Account Executive to drive "
+                    "new logo acquisition and expansion in Fortune 500 accounts across the "
+                    "financial services vertical. "
+                    "You will manage complex 6–18 month sales cycles, build relationships with "
+                    "C-suite stakeholders, and collaborate with solutions engineers to close "
+                    "strategic deals. "
+                    "Requirements: 7+ years enterprise SaaS sales experience; track record of "
+                    "$1M+ ACV quota attainment; experience selling data/AI platforms a strong plus. "
+                    "OTE: $280,000–$380,000 (50/50 base/variable) + equity. NYC or remote."
+                ),
+                location="New York, NY (Remote-eligible)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=140000.0,
+                salary_max=190000.0,
+            ),
+            _make_job_dict(
+                title="Registered Nurse — ICU, Night Shift",
+                company="Johns Hopkins Hospital",
+                description=(
+                    "Johns Hopkins Hospital is seeking an experienced Registered Nurse for "
+                    "the Medical Intensive Care Unit (MICU), night shift (7p–7a). "
+                    "Responsibilities include direct patient care, medication administration, "
+                    "care coordination, and documentation in Epic EMR. "
+                    "Requirements: Current RN license in Maryland; BSN preferred; minimum 1 year "
+                    "critical care experience; BLS and ACLS certification required. "
+                    "Salary: $75,000–$95,000/year + shift differential + comprehensive benefits. "
+                    "Sign-on bonus available. Contact: nursing-recruit@jhmi.edu"
+                ),
+                location="Baltimore, MD (On-site)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=75000.0,
+                salary_max=95000.0,
+            ),
+            _make_job_dict(
+                title="Mechanical Engineer — Powertrain Systems",
+                company="Ford Motor Company",
+                description=(
+                    "Ford's Powertrain Engineering group is hiring a Mechanical Engineer to "
+                    "support development of next-generation EV drivetrain components. "
+                    "You will own component design, tolerance analysis, DFMEAs, and work "
+                    "closely with suppliers and test teams to validate designs. "
+                    "Requirements: BS in Mechanical Engineering; 3–7 years powertrain or "
+                    "automotive component design experience; proficiency in CATIA V5 or NX; "
+                    "GD&T expertise. Salary: $85,000–$115,000 + annual bonus + Ford stock plan. "
+                    "Dearborn, MI. Relocation assistance available."
+                ),
+                location="Dearborn, MI (On-site)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=85000.0,
+                salary_max=115000.0,
+            ),
+            _make_job_dict(
+                title="Marketing Manager — Brand & Campaigns",
+                company="Procter & Gamble",
+                description=(
+                    "P&G Brand Management is seeking a Marketing Manager for the Tide brand "
+                    "to lead integrated marketing campaigns across paid media, social, and "
+                    "in-store activations. "
+                    "You will manage agency relationships, analyze brand health metrics, "
+                    "and develop go-to-market strategies for new product launches. "
+                    "Requirements: MBA preferred; 4–6 years consumer brand marketing experience; "
+                    "strong analytical skills; CPG or FMCG background. "
+                    "Salary: $110,000–$140,000 + annual performance bonus + relocation. "
+                    "Cincinnati, OH. In-office 4 days/week."
+                ),
+                location="Cincinnati, OH (Hybrid)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=110000.0,
+                salary_max=140000.0,
+            ),
+            _make_job_dict(
+                title="Cybersecurity Analyst, Tier 2 SOC",
+                company="JPMorgan Chase",
+                description=(
+                    "JPMorgan Chase's Global Security Operations Center is hiring a Tier 2 "
+                    "Cybersecurity Analyst to triage and respond to security incidents, "
+                    "perform threat hunting, and develop detection rules in Splunk/SIEM. "
+                    "Requirements: 3+ years in a SOC or incident response role; experience with "
+                    "MITRE ATT&CK framework; relevant certifications (GCIH, GCFE, or CEH a plus); "
+                    "familiarity with Python or PowerShell scripting. "
+                    "Salary: $95,000–$130,000 + annual bonus. Hybrid, Columbus OH or Tampa FL. "
+                    "Comprehensive benefits including tuition reimbursement."
+                ),
+                location="Columbus, OH (Hybrid)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=95000.0,
+                salary_max=130000.0,
+            ),
+            _make_job_dict(
+                title="Supply Chain Analyst — Inventory Planning",
+                company="Target Corporation",
+                description=(
+                    "Target's Supply Chain team is seeking a Supply Chain Analyst to support "
+                    "inventory planning and replenishment strategy for the Home & Hardlines "
+                    "category. You will develop forecasting models, monitor KPIs, and work "
+                    "with merchants and DC operations to reduce out-of-stocks. "
+                    "Requirements: Bachelor's degree in Supply Chain, Operations, or related; "
+                    "2–4 years supply chain or retail planning experience; SQL proficiency; "
+                    "SAP or JDA experience a plus. "
+                    "Salary: $65,000–$85,000 + annual bonus + merchandise discount. "
+                    "Minneapolis, MN. Hybrid schedule."
+                ),
+                location="Minneapolis, MN (Hybrid)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=65000.0,
+                salary_max=85000.0,
+            ),
+            _make_job_dict(
+                title="Attorney — Corporate M&A, Associate",
+                company="Skadden, Arps, Slate, Meagher & Flom LLP",
+                description=(
+                    "Skadden's Corporate M&A group seeks a third-year or fourth-year Associate "
+                    "for its New York office. The successful candidate will assist on complex "
+                    "cross-border M&A, private equity, and corporate governance matters. "
+                    "Requirements: JD from an accredited law school; active New York bar membership; "
+                    "strong academic record; prior M&A deal experience. "
+                    "Compensation: $260,000–$330,000 (class-year dependent) + year-end discretionary "
+                    "bonus. Full benefits, 401(k), bar dues. Apply via Skadden.com/careers."
+                ),
+                location="New York, NY (On-site)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=260000.0,
+                salary_max=330000.0,
+            ),
+            _make_job_dict(
+                title="Warehouse Associate — Fulfillment Center",
+                company="Amazon.com Services LLC",
+                description=(
+                    "Amazon Fulfillment is hiring full-time Warehouse Associates for day and "
+                    "night shifts at our BDL7 fulfillment center in Windsor, CT. "
+                    "Responsibilities include receiving, picking, packing, and shipping customer "
+                    "orders using handheld scanners. Starting pay $19.00/hour + $.50 shift "
+                    "differential for nights. Benefits from day 1: medical, dental, vision, "
+                    "401(k) with 50% match, paid time off. No experience required; paid training. "
+                    "Must be 18+ years old, able to lift up to 49 lbs, and stand/walk for "
+                    "extended periods. Apply at Amazon.jobs."
+                ),
+                location="Windsor, CT (On-site)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=39520.0,
+                salary_max=43680.0,
+            ),
+            _make_job_dict(
+                title="Clinical Research Coordinator",
+                company="Mayo Clinic",
+                description=(
+                    "Mayo Clinic's Department of Oncology is seeking a Clinical Research "
+                    "Coordinator to support Phase II and III oncology clinical trials. "
+                    "Responsibilities: patient screening and enrollment, regulatory document "
+                    "maintenance (IRB, FDA), data entry into REDCap and EDC systems, coordinating "
+                    "study visits with investigators and nursing staff. "
+                    "Requirements: Bachelor's degree in Life Sciences or Nursing; 1–3 years "
+                    "clinical research experience; ACRP or SOCRA certification preferred; "
+                    "knowledge of GCP and FDA 21 CFR Part 11. "
+                    "Salary: $55,000–$72,000. Rochester, MN. Full benefits."
+                ),
+                location="Rochester, MN (On-site)",
+                source="seed_legitimate",
+                is_scam=False,
+                salary_min=55000.0,
+                salary_max=72000.0,
+            ),
+        ]
+        return seeds[:count]
+
+    # ---------------------------------------------------------------------------
     # 2. Kaggle EMSCAD/EMFJ CSV loader
     # ---------------------------------------------------------------------------
 
@@ -956,6 +1265,33 @@ class ScamDataCollector:
             seeded, new, updated, errors,
         )
         return result
+
+    def seed_training_data(self, db: "SentinelDB") -> dict:
+        """Ingest both scam and legitimate seed jobs into the DB for flywheel training.
+
+        Combines:
+        - fetch_ftc_data()            — 10 labeled scam postings
+        - generate_legitimate_seeds() — 15 labeled legitimate postings
+
+        Each job is scored and saved, and pattern weights are updated via
+        ingest_labeled_data(), making precision/recall/F1 computable immediately.
+
+        Returns a merged dict with seeding stats and classification metrics.
+        """
+        scam_jobs = self.fetch_ftc_data()
+        legit_jobs = self.generate_legitimate_seeds()
+        all_jobs = scam_jobs + legit_jobs
+
+        logger.info(
+            "seed_training_data: ingesting %d scam + %d legitimate seeds",
+            len(scam_jobs),
+            len(legit_jobs),
+        )
+
+        metrics = self.ingest_labeled_data(db, all_jobs)
+        metrics["scam_seeds"] = len(scam_jobs)
+        metrics["legitimate_seeds"] = len(legit_jobs)
+        return metrics
 
     # ---------------------------------------------------------------------------
     # 5. Ingest labeled data
