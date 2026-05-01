@@ -14,6 +14,18 @@ try:
 except ImportError:
     _GRAPH_AVAILABLE = False
 
+try:
+    from sentinel.link_analyzer import extract_link_signals as _extract_link_signals
+    _LINK_ANALYZER_AVAILABLE = True
+except ImportError:
+    _LINK_ANALYZER_AVAILABLE = False
+
+try:
+    from sentinel.company_verifier import CompanyVerifier as _CompanyVerifier
+    _COMPANY_VERIFIER_AVAILABLE = True
+except ImportError:
+    _COMPANY_VERIFIER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -59,6 +71,20 @@ def analyze_job(job: JobPosting, use_ai: bool = True) -> ValidationResult:
             signals = _extract_with_graph(job)
         except Exception:
             logger.debug("Graph signal extraction failed; using base signals", exc_info=True)
+
+    if _LINK_ANALYZER_AVAILABLE:
+        try:
+            signals.extend(_extract_link_signals(job))
+        except Exception:
+            logger.debug("Link analysis failed", exc_info=True)
+
+    if _COMPANY_VERIFIER_AVAILABLE:
+        try:
+            verifier = _CompanyVerifier()
+            signals.extend(verifier.extract_verification_signals(job))
+        except Exception:
+            logger.debug("Company verification failed", exc_info=True)
+
     result = build_result(job, signals)
 
     if use_ai and _AMBIGUOUS_LOW <= result.scam_score <= _AMBIGUOUS_HIGH:
