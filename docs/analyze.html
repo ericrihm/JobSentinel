@@ -296,6 +296,41 @@
       box-shadow: var(--shadow);
     }
 
+
+    .verdict-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 16px 20px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    .verdict-icon { font-size: 1.5rem; flex-shrink: 0; margin-top: 2px; }
+    .verdict-text { flex: 1; }
+    .verdict-text strong { display: block; font-size: 1rem; margin-bottom: 4px; }
+    .verdict-text span { font-size: 0.88rem; opacity: 0.85; }
+    .verdict-high {
+      background: rgba(248,81,73,.10);
+      border: 1px solid rgba(248,81,73,.30);
+      color: var(--red);
+    }
+    .verdict-suspicious {
+      background: rgba(219,109,40,.10);
+      border: 1px solid rgba(219,109,40,.30);
+      color: var(--orange);
+    }
+    .verdict-low {
+      background: rgba(210,153,34,.10);
+      border: 1px solid rgba(210,153,34,.30);
+      color: var(--yellow);
+    }
+    .verdict-safe {
+      background: rgba(63,185,80,.10);
+      border: 1px solid rgba(63,185,80,.30);
+      color: var(--green);
+    }
+
     .result-score-top {
       display: flex;
       align-items: center;
@@ -706,7 +741,7 @@
         grid-template-columns: 1fr;
       }
       .sidebar {
-        order: -1;
+        order: 1;
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 16px;
@@ -833,7 +868,7 @@ Red flags to watch for:
             <button class="sample-btn" onclick="loadSample('scam')" title="Load a scam job posting example">⚠ Scam Example</button>
             <button class="sample-btn" onclick="loadSample('safe')" title="Load a legitimate job posting example">✓ Safe Example</button>
           </div>
-            <span class="paste-hint" title="Paste a job posting anywhere on this page">⌘V anywhere to analyze</span>
+            <span class="paste-hint" title="Paste a job posting anywhere on this page">Ctrl/⌘+V anywhere to analyze</span>
         </div>
       </div>
 
@@ -1373,7 +1408,10 @@ async function handleAnalyze() {
       if (text) {
         showNotice(area, 'warn', '📡', 'API unreachable — running client-side analysis. Results may be less comprehensive.');
       } else {
-        showNotice(area, 'err', '⚠', 'Cannot analyze a URL without the API. Copy the job description text from the posting and use the Text tab instead.');
+        const errEl = document.createElement('div');
+        errEl.className = 'notice notice-err';
+        errEl.innerHTML = '<span class="notice-icon">⚠</span><span class="notice-body">Cannot analyze a URL without the API. <a href="#" onclick="switchTab(\'text\');return false" style="color:var(--accent);text-decoration:underline">Switch to Text tab</a> and paste the job description instead.</span>';
+        area.prepend(errEl);
         btn.classList.remove('loading');
         btn.disabled = false;
         return;
@@ -1431,7 +1469,7 @@ function renderResults(result, source) {
 
   // Score card
   const metaParts = [
-    `${result.signal_count ?? '?'} signals`,
+    `${result.signal_count ?? '?'} signal${(result.signal_count || 0) !== 1 ? 's' : ''} flagged`,
     conf > 0 ? `${conf}% confidence` : null,
     timeStr,
   ].filter(Boolean).join(' · ');
@@ -1469,6 +1507,26 @@ function renderResults(result, source) {
           <button class="report-btn report-scam" onclick="reportPosting('scam', this)" aria-label="Report as scam">🚨 Scam</button>
           <button class="report-btn report-legit" onclick="reportPosting('legitimate', this)" aria-label="Report as legitimate">✓ Legitimate</button>
         </div>
+      </div>
+    </div>
+  `;
+
+
+  // Emotional verdict headline (HIBP pattern)
+  const verdicts = {
+    high: { icon: '🚫', text: 'This posting has strong indicators of a job scam.', sub: 'Do not share personal information or send any payment.' },
+    suspicious: { icon: '⚠️', text: 'This posting has several warning signs.', sub: 'Research this employer independently before proceeding.' },
+    low: { icon: '🔍', text: 'Minor concerns detected — proceed with normal caution.', sub: 'Verify the employer exists and check reviews before applying.' },
+    safe: { icon: '✅', text: 'No significant scam signals found.', sub: 'Standard job search precautions still apply.' },
+  };
+  const riskLevel = result.risk_level || (score >= 65 ? 'high' : score >= 40 ? 'suspicious' : score >= 20 ? 'low' : 'safe');
+  const verdict = verdicts[riskLevel] || verdicts.safe;
+  html += `
+    <div class="verdict-banner verdict-${riskLevel}">
+      <span class="verdict-icon">${verdict.icon}</span>
+      <div class="verdict-text">
+        <strong>${verdict.text}</strong>
+        <span>${verdict.sub}</span>
       </div>
     </div>
   `;
