@@ -96,7 +96,7 @@ sentinel extension-build                 — Build browser extension
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v    # 356 tests
+python -m pytest tests/ -v    # 393 tests
 ```
 
 ## Codexbro Integration
@@ -115,7 +115,7 @@ Registered with codexbro for overnight autonomous building. Task specs in `docs/
 - Added batch analysis (--file flag)
 - Security hardening (input validation, command injection, HTML sanitization)
 - Browser extension scaffold (Chrome MV3)
-- Test coverage: 154 → 356 tests (flywheel, API, CLI all covered)
+- Test coverage: 154 → 393 tests (flywheel, API, CLI, scan, rate limiting, property, innovation all covered)
 
 ## Storage
 
