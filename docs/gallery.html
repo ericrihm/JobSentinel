@@ -728,6 +728,21 @@ const revealObserver = new IntersectionObserver(entries => {
   });
 }, { threshold: 0.08 });
 document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+/* Rewire "Try it" links to pre-populate analyzer with example text */
+document.querySelectorAll('.gallery-try-link').forEach(function(link) {
+  var card = link.closest('.gallery-card');
+  if (!card) return;
+  var example = card.querySelector('.gallery-example');
+  if (!example) return;
+  var text = example.textContent.trim();
+  if (!text) return;
+  try {
+    var data = { t: text, s: 0 };
+    var encoded = btoa(encodeURIComponent(JSON.stringify(data)));
+    link.href = 'analyze.html#share=' + encoded;
+  } catch(e) {}
+});
 </script>
 <script type="module" src="analyze-bridge.js"></script>
 </body>
