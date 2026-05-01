@@ -77,8 +77,14 @@ _GUARANTEED_INCOME = re.compile(
 )
 
 _CRYPTO = re.compile(
-    r"\b(bitcoin|btc|ethereum|eth|crypto(currency)?|gift card|"
-    r"western union|moneygram|wire transfer|zelle|cashapp|venmo)\b",
+    r"\b(b{1,2}i{1,2}t{1,2}c{1,2}o{1,2}i{1,2}n{1,2}|btc|"
+    r"e{1,2}t{1,2}h{1,2}e{1,2}r{1,2}e{0,2}u{1,2}m{1,2}|eth|"
+    r"c{1,2}r{1,2}y{1,2}p{1,2}t{1,2}o{1,2}(c{1,2}u{1,2}r{1,2}r{0,2}e{1,2}n{1,2}c{0,2}y)?|"
+    r"g{1,2}i{1,2}f{1,2}t{1,2}\s*c{1,2}a{1,2}r{1,2}d{1,2}|"
+    r"w{1,2}e{1,2}s{1,2}t{1,2}e{1,2}r{1,2}n{1,2}\s+u{1,2}n{1,2}i{1,2}o{1,2}n{1,2}|"
+    r"m{1,2}o{1,2}n{1,2}e{1,2}y{1,2}g{1,2}r{1,2}a{1,2}m{1,2}|"
+    r"w{1,2}i{1,2}r{1,2}e{1,2}\s+t{1,2}r{1,2}a{1,2}n{1,2}s{1,2}f{1,2}e{1,2}r{1,2}|"
+    r"zelle|cashapp|venmo)\b",
     re.IGNORECASE,
 )
 
@@ -818,11 +824,13 @@ _PHONE_GENERAL = re.compile(
 )
 
 _INTERVIEW_BYPASS = re.compile(
-    r"\b(no interview (required|needed|necessary)|"
-    r"hired (on the spot|immediately|same day)|"
+    r"\b(n{1,2}o{1,2}\s+i{1,2}n{1,2}t{1,2}e{1,2}r{1,2}v{1,2}i{1,2}e{1,2}w{1,2}\s+"
+    r"(r{1,2}e{1,2}q{1,2}u{1,2}i{1,2}r{1,2}e{1,2}d{1,2}|n{1,2}e{1,2}e{0,2}d{1,2}e{0,2}d{0,2}|n{1,2}e{1,2}c{1,2}e{1,2}s{1,2}s{0,2}a{1,2}r{1,2}y{1,2})|"
+    r"h{1,2}i{1,2}r{1,2}e{1,2}d{1,2}\s+(on the spot|immediately|same day)|"
     r"start (immediately|today|right away) no (questions?|interview)|"
-    r"no resume (required|needed|necessary)|"
-    r"no background (check|screening))\b",
+    r"n{1,2}o{1,2}\s+r{1,2}e{1,2}s{1,2}u{1,2}m{1,2}e{1,2}\s+"
+    r"(r{1,2}e{1,2}q{1,2}u{1,2}i{1,2}r{1,2}e{1,2}d{1,2}|n{1,2}e{1,2}e{0,2}d{1,2}e{0,2}d{0,2}|n{1,2}e{1,2}c{1,2}e{1,2}s{1,2}s{0,2}a{1,2}r{1,2}y{1,2})|"
+    r"n{1,2}o{1,2}\s+b{1,2}a{1,2}c{1,2}k{1,2}g{1,2}r{1,2}o{1,2}u{1,2}n{1,2}d{1,2}\s+(check|screening))\b",
     re.IGNORECASE,
 )
 

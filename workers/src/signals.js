@@ -156,16 +156,16 @@ export function checkCryptoPayment(job) {
 }
 
 // ---------------------------------------------------------------------------
-// Signal 6: no_company  (RED FLAG, weight 0.85/0.70)
+// Signal 6: no_company  (WARNING, weight 0.45)
 // ---------------------------------------------------------------------------
 
 export function checkNoCompanyPresence(job) {
   if (!String(job.company || '').trim()) {
     return {
       name: 'no_company',
-      category: 'red_flag',
-      weight: 0.85,
-      confidence: 0.80,
+      category: 'warning',
+      weight: 0.45,
+      confidence: 0.50,
       detail: 'No company name listed',
       evidence: 'company field is empty',
     };
@@ -173,9 +173,9 @@ export function checkNoCompanyPresence(job) {
   if (!String(job.company_linkedin_url || '').trim()) {
     return {
       name: 'no_company',
-      category: 'red_flag',
-      weight: 0.70,
-      confidence: 0.65,
+      category: 'warning',
+      weight: 0.45,
+      confidence: 0.50,
       detail: 'No company LinkedIn page linked',
       evidence: 'company_linkedin_url is empty',
     };
@@ -276,18 +276,18 @@ export function checkSalaryAnomaly(job) {
 }
 
 // ---------------------------------------------------------------------------
-// Signal 11: vague_description  (WARNING, weight 0.50/0.65)
+// Signal 11: vague_description  (WARNING, weight 0.35/0.50)
 // ---------------------------------------------------------------------------
 
 export function checkVagueDescription(job) {
   const words = String(job.description || '').trim().split(/\s+/).filter(Boolean);
-  if (words.length >= 30) return null;
-  const weight = words.length < 10 ? 0.65 : 0.50;
+  if (words.length >= 20) return null;
+  const weight = words.length < 10 ? 0.50 : 0.35;
   return {
     name: 'vague_description',
     category: 'warning',
     weight,
-    confidence: 0.70,
+    confidence: 0.60,
     detail: `Job description is extremely sparse (${words.length} words)`,
     evidence: String(job.description || '').slice(0, 120),
   };
@@ -1565,7 +1565,7 @@ export function checkCompanyNotFound(job) {
 }
 
 // ---------------------------------------------------------------------------
-// Signal CV-2: company_domain_mismatch  (WARNING, weight 0.65)
+// Signal CV-2: company_domain_mismatch  (WARNING, weight 0.50)
 // Offline: check if description contains a URL whose domain doesn't
 // correspond to the company name (fuzzy match, no DNS)
 // ---------------------------------------------------------------------------
@@ -1601,7 +1601,7 @@ export function checkCompanyDomainMismatch(job) {
     return {
       name: 'company_domain_mismatch',
       category: 'warning',
-      weight: 0.65,
+      weight: 0.50,
       confidence: 0.55,
       detail: `Company name '${name}' does not match any URLs in the posting (e.g. ${mismatchExample})`,
       evidence: `name=${name}, domain=${mismatchExample}`,
