@@ -3,7 +3,11 @@
   "name": "JobSentinel",
   "version": "0.2.0",
   "description": "AI-powered LinkedIn job scam detection",
-  "permissions": ["activeTab", "storage", "tabs"],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs"
+  ],
   "host_permissions": [
     "*://*.linkedin.com/jobs/*",
     "https://api.jobsentinel.org/*"
@@ -11,16 +15,29 @@
   "options_page": "options.html",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "JobSentinel"
+    "default_title": "JobSentinel",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
   },
   "content_scripts": [
     {
-      "matches": ["*://*.linkedin.com/jobs/*"],
-      "js": ["content.js"],
+      "matches": [
+        "*://*.linkedin.com/jobs/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }

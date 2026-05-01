@@ -164,7 +164,8 @@ class TextNormalizer:
           4. Unusual whitespace → regular space
           5. Confusable / homoglyph → ASCII equivalent
           6. Leetspeak digit/symbol expansion
-          7. Collapse repeated whitespace
+          7. Collapse repeated characters (guaaranteed → guaranteed)
+          8. Collapse repeated whitespace
         """
         if not text:
             return text
@@ -190,7 +191,13 @@ class TextNormalizer:
         # 6. Leetspeak digit/symbol → letter (only outside obvious numeric contexts)
         text = self._expand_leet(text)
 
-        # 7. Collapse repeated whitespace
+        # 7. Collapse repeated characters to harden against char_duplicate attacks.
+        # Step A: any run of 3+ identical letters -> max 2 (safe for all English)
+        text = re.sub(r'([a-zA-Z])\1{2,}', r'\1\1', text)
+        # Step B: collapse doubles of letters that almost never double in English
+        text = re.sub(r'([ahijkquvwxyAHIJKQUVWXY])\1', r'\1', text)
+
+        # 8. Collapse repeated whitespace
         text = re.sub(r"  +", " ", text)
 
         return text

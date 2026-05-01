@@ -206,16 +206,17 @@ class TestDetectionFlywheel:
         }
         assert required_keys.issubset(set(health.keys()))
 
-    def test_get_health_healthy_on_fresh_db(self, flywheel):
-        """A fresh DB with no reports should be healthy (no regression alarm)."""
+    def test_get_health_cold_start_on_fresh_db(self, flywheel):
+        """A fresh DB with no data should report cold_start=True."""
         health = flywheel.get_health()
-        assert health["healthy"] is True
+        assert health["cold_start"] is True
+        assert health["healthy"] is False
         assert health["regression_alarm"] is False
 
     def test_get_health_grade_is_valid(self, flywheel):
-        """Health grade should be one of the five letter grades."""
+        """Health grade should be valid (N/A for cold start, letter otherwise)."""
         health = flywheel.get_health()
-        assert health["grade"] in ("A", "B", "C", "D", "F")
+        assert health["grade"] in ("A", "B", "C", "D", "F", "N/A")
 
     def test_get_health_active_patterns_populated(self, flywheel):
         """Seeded DB should report active patterns > 0."""
