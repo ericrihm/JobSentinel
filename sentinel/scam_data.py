@@ -1008,8 +1008,8 @@ class ScamDataCollector:
                 )
 
                 signals = extract_signals(job)
-                scam_score, confidence = score_signals(signals)
-                result = build_result(job, signals, scam_score, confidence)
+                result = build_result(job, signals)
+                scam_score = result.scam_score
 
                 # Prediction: scam if score >= 0.5
                 predicted_scam = scam_score >= 0.5
@@ -1053,7 +1053,7 @@ class ScamDataCollector:
                     "salary_min": job.salary_min,
                     "salary_max": job.salary_max,
                     "scam_score": scam_score,
-                    "confidence": confidence,
+                    "confidence": result.confidence,
                     "risk_level": result.risk_level.value,
                     "analyzed_at": _now_iso(),
                     "signal_count": len(signals),
