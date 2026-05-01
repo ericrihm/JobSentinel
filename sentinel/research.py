@@ -941,6 +941,11 @@ class ResearchEngine:
         # Step 2: Generate prompts
         prompts = self.generate_research_prompts(eligible[:budget])
 
+        # Snapshot precision before research cycle
+        from sentinel.flywheel import DetectionFlywheel
+        fw = DetectionFlywheel(self.db)
+        pre_precision = fw.compute_accuracy().get("precision", 0.0)
+
         # Step 3: Execute research
         for prompt in prompts:
             result = self.execute_research(prompt)
@@ -957,21 +962,26 @@ class ResearchEngine:
                     integration["skipped"],
                 )
 
-                # Step 5: Record to DB
+                # Step 5: Measure precision delta after integration
+                post_precision = fw.compute_accuracy().get("precision", 0.0)
+                precision_delta = post_precision - pre_precision
+
+                # Step 6: Record to DB with actual precision_delta
                 self.db.insert_research_run({
                     "topic": prompt.topic.area,
                     "prompt": prompt.prompt_text[:500],
                     "response_summary": result.raw_response[:500],
                     "patterns_extracted": len(result.extracted_patterns),
                     "patterns_adopted": integration["new_patterns"],
-                    "precision_delta": 0.0,  # Measured later
+                    "precision_delta": precision_delta,
                 })
 
-                # Update topic priority
+                # Update topic priority with measured impact
                 self.db.update_topic_priority(
                     topic=prompt.topic.area,
                     priority=prompt.topic.priority,
                     patterns_found=len(result.extracted_patterns),
+                    precision_impact=precision_delta,
                 )
 
                 # Publish to ecosystem
@@ -979,8 +989,12 @@ class ResearchEngine:
                     "success" if integration["new_patterns"] > 0 else "partial",
                     f"research/{prompt.topic.area}: "
                     f"{integration['new_patterns']} new patterns, "
-                    f"{integration['adjustments']} adjustments",
+                    f"{integration['adjustments']} adjustments, "
+                    f"Δprecision={precision_delta:+.4f}",
                 )
+
+                # Update baseline for next prompt
+                pre_precision = post_precision
 
         return results
 

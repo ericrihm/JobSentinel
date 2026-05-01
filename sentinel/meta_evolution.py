@@ -673,7 +673,27 @@ class FlywheelSurgeon:
         )
 
     def adjust_reward_function(self, precision_weight: float = 0.6, recall_weight: float = 0.4) -> SurgeryAction:
-        """Adjust the balance between precision and recall in the fitness function."""
+        """Adjust the balance between precision and recall in the fitness function.
+
+        Stores the weights in the DB so FlywheelSnapshot.fitness() can read them.
+        """
+        weights = {"precision": precision_weight, "recall": recall_weight}
+        try:
+            self.db.conn.execute(
+                """
+                INSERT INTO meta_evolution_configs
+                    (config_id, config_json, mean_fitness, evaluations, generation, is_active, created_at, updated_at)
+                VALUES ('reward_weights', ?, 0.0, 0, 0, 0, ?, ?)
+                ON CONFLICT(config_id) DO UPDATE SET
+                    config_json = excluded.config_json,
+                    updated_at = excluded.updated_at
+                """,
+                (json.dumps(weights), _now_iso(), _now_iso()),
+            )
+            self.db.conn.commit()
+        except Exception:
+            logger.debug("Failed to persist reward weights", exc_info=True)
+
         return SurgeryAction(
             flywheel_name="detection",
             action_type="adjust_reward",
@@ -1212,8 +1232,8 @@ class MetaEvolutionEngine:
     def _apply_config(self, config: HyperparamConfig) -> None:
         """Apply a hyperparameter configuration to the live flywheel system.
 
-        Writes to the meta_evolution_configs table so the flywheel and
-        innovation engine can pick up the new settings.
+        Persists to DB AND pushes values to the running flywheel/innovation
+        instances so the config takes effect immediately.
         """
         try:
             self.db.conn.execute(
@@ -1246,7 +1266,36 @@ class MetaEvolutionEngine:
             )
             self.db.conn.commit()
         except Exception:
-            logger.debug("Failed to apply config %s", config.config_id, exc_info=True)
+            logger.debug("Failed to persist config %s", config.config_id, exc_info=True)
+            return
+
+        self._push_config_to_flywheel(config)
+
+    def _push_config_to_flywheel(self, config: HyperparamConfig) -> None:
+        """Push hyperparameter values to the live flywheel and subsystems."""
+        try:
+            from sentinel.flywheel import CUSUMDetector, DetectionFlywheel
+
+            fw = DetectionFlywheel(self.db)
+            fw.PROMOTE_PRECISION_THRESHOLD = config.promote_precision_threshold
+            fw.PROMOTE_MIN_OBSERVATIONS = config.promote_min_observations
+            fw.DEPRECATE_PRECISION_THRESHOLD = config.deprecate_precision_threshold
+            fw.DEPRECATE_MIN_OBSERVATIONS = config.deprecate_min_observations
+            fw._cusum = CUSUMDetector(
+                target=fw._cusum.target,
+                slack=config.cusum_slack,
+                threshold=config.cusum_threshold,
+            )
+            if hasattr(fw, 'shadow') and fw.shadow is not None:
+                fw.shadow._promote_threshold = config.shadow_promote_threshold
+
+            logger.info(
+                "Config %s pushed to live flywheel: cusum_h=%.2f promote_prec=%.2f deprecate_prec=%.2f",
+                config.config_id, config.cusum_threshold,
+                config.promote_precision_threshold, config.deprecate_precision_threshold,
+            )
+        except Exception:
+            logger.debug("Failed to push config to flywheel", exc_info=True)
 
     # ------------------------------------------------------------------
     # Snapshot management

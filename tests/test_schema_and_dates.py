@@ -29,6 +29,7 @@ EXPECTED_COLUMNS = {
     "precision", "recall", "signals_updated", "patterns_evolved",
     "f1", "accuracy", "cycle_number", "regression_alarm",
     "cusum_statistic", "patterns_promoted", "patterns_deprecated",
+    "calibration_ece", "thresholds_adjusted", "shadow_evaluation_json",
 }
 
 

@@ -105,7 +105,10 @@ CREATE TABLE IF NOT EXISTS flywheel_metrics (
     regression_alarm INTEGER DEFAULT 0,
     cusum_statistic REAL DEFAULT 0.0,
     patterns_promoted INTEGER DEFAULT 0,
-    patterns_deprecated INTEGER DEFAULT 0
+    patterns_deprecated INTEGER DEFAULT 0,
+    calibration_ece REAL DEFAULT 0.0,
+    thresholds_adjusted INTEGER DEFAULT 0,
+    shadow_evaluation_json TEXT DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS source_stats (
@@ -312,6 +315,10 @@ class SentinelDB:
             "ALTER TABLE flywheel_metrics ADD COLUMN patterns_deprecated INTEGER DEFAULT 0",
             # Calibration / confidence additions
             "ALTER TABLE jobs ADD COLUMN confidence REAL",
+            # Flywheel metrics: calibration + shadow + thresholds
+            "ALTER TABLE flywheel_metrics ADD COLUMN calibration_ece REAL DEFAULT 0.0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN thresholds_adjusted INTEGER DEFAULT 0",
+            "ALTER TABLE flywheel_metrics ADD COLUMN shadow_evaluation_json TEXT DEFAULT '{}'",
         ]:
             with contextlib.suppress(sqlite3.OperationalError):
                 self.conn.execute(col_sql)
@@ -716,18 +723,26 @@ class SentinelDB:
         if isinstance(deprecated, list):
             deprecated = len(deprecated)
 
+        # Serialize shadow_evaluation if present
+        shadow_eval = metrics.get("shadow_evaluation", {})
+        if not isinstance(shadow_eval, str):
+            import json as _json
+            shadow_eval = _json.dumps(shadow_eval)
+
         self.conn.execute(
             """
             INSERT INTO flywheel_metrics
                 (cycle_ts, total_analyzed, true_positives, false_positives,
                  precision, recall, signals_updated, patterns_evolved,
                  f1, accuracy, cycle_number, regression_alarm,
-                 cusum_statistic, patterns_promoted, patterns_deprecated)
+                 cusum_statistic, patterns_promoted, patterns_deprecated,
+                 calibration_ece, thresholds_adjusted, shadow_evaluation_json)
             VALUES
                 (:cycle_ts, :total_analyzed, :true_positives, :false_positives,
                  :precision, :recall, :signals_updated, :patterns_evolved,
                  :f1, :accuracy, :cycle_number, :regression_alarm,
-                 :cusum_statistic, :patterns_promoted, :patterns_deprecated)
+                 :cusum_statistic, :patterns_promoted, :patterns_deprecated,
+                 :calibration_ece, :thresholds_adjusted, :shadow_evaluation_json)
             """,
             {
                 "cycle_ts": metrics.get("cycle_ts", _now_iso()),
@@ -745,6 +760,9 @@ class SentinelDB:
                 "cusum_statistic": metrics.get("cusum_statistic", 0.0),
                 "patterns_promoted": promoted,
                 "patterns_deprecated": deprecated,
+                "calibration_ece": metrics.get("calibration_ece", 0.0),
+                "thresholds_adjusted": metrics.get("thresholds_adjusted", 0),
+                "shadow_evaluation_json": shadow_eval,
             },
         )
         self.conn.commit()
