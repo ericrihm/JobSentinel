@@ -13,7 +13,7 @@ Components:
 
 from __future__ import annotations
 
-import json
+import contextlib
 import logging
 import math
 import random
@@ -83,10 +83,7 @@ class CheckpointManager:
             The newly created Checkpoint.
         """
         # Signal weights
-        if flywheel is not None:
-            weights = dict(flywheel.weight_tracker.all_weights())
-        else:
-            weights = self._weights_from_db()
+        weights = dict(flywheel.weight_tracker.all_weights()) if flywheel is not None else self._weights_from_db()
 
         # Pattern counts by status
         counts: dict[str, int] = {}
@@ -316,9 +313,7 @@ class _EWMA:
             self._baseline = value
             return False
         self._value = self.alpha * value + (1.0 - self.alpha) * self._value
-        if self._baseline is not None and abs(self._value - self._baseline) > self.threshold:
-            return True
-        return False
+        return bool(self._baseline is not None and abs(self._value - self._baseline) > self.threshold)
 
     def set_baseline(self, value: float) -> None:
         self._baseline = value
@@ -696,10 +691,8 @@ class SelfIterator:
 
         if not accepted:
             # Revert to pre-iteration checkpoint
-            try:
+            with contextlib.suppress(KeyError):
                 self.checkpoint_manager.rollback(tag, flywheel=self.flywheel)
-            except KeyError:
-                pass
         else:
             if after_precision > self._best_precision:
                 self._best_precision = after_precision

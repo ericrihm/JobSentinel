@@ -15,7 +15,6 @@ import re
 import statistics
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -587,7 +586,7 @@ class StyleFingerprinter:
         """Simplified Mahalanobis distance using diagonal covariance."""
         dist_sq = sum(
             ((v - c) ** 2) / max(var, 1e-9)
-            for v, c, var in zip(vec, centroid, variance)
+            for v, c, var in zip(vec, centroid, variance, strict=False)
         )
         return math.sqrt(dist_sq)
 

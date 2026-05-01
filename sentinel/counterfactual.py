@@ -21,8 +21,6 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Callable
-
 
 # ---------------------------------------------------------------------------
 # Re-use the scorer's log-odds accumulator directly so results are identical.
@@ -142,7 +140,7 @@ class DiagnosisNode:
     step: str                   # "text_normalisation" | "signal_extraction" | "weight" | "threshold"
     finding: str
     passed: bool
-    children: list["DiagnosisNode"] = field(default_factory=list)
+    children: list[DiagnosisNode] = field(default_factory=list)
 
 
 @dataclass
@@ -1026,7 +1024,7 @@ class RootCauseTracer:
             issues.append("Replacement characters found (encoding issues).")
 
         # Obfuscation markers
-        if re.search(u'[\u200b-\u200f\u2060\ufeff]', job_text):
+        if re.search('[\u200b-\u200f\u2060\ufeff]', job_text):
             issues.append("Zero-width characters detected (possible evasion).")
 
         passed = len(issues) == 0

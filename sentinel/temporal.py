@@ -20,11 +20,8 @@ import statistics
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Sequence
 
 from sentinel.db import SentinelDB
-from sentinel.models import ScamSignal, SignalCategory
-
 
 # ---------------------------------------------------------------------------
 # Small internal helpers
@@ -712,7 +709,7 @@ class PatternDrift:
         eps = 1e-10
         return sum(
             pi * math.log((pi + eps) / (qi + eps))
-            for pi, qi in zip(p, q)
+            for pi, qi in zip(p, q, strict=False)
             if pi > 0
         )
 
@@ -730,7 +727,7 @@ class PatternDrift:
                 "current_share": round(qi, 6),
                 "delta": round(qi - pi, 6),
             }
-            for sig, pi, qi in zip(signals, p, q)
+            for sig, pi, qi in zip(signals, p, q, strict=False)
         ]
         deltas.sort(key=lambda x: abs(x["delta"]), reverse=True)
         return deltas[:top_n]
@@ -811,11 +808,8 @@ class PredictiveModel:
         predicted = max(0.0, predicted)
 
         # Confidence interval: residual standard error * 1.96
-        residuals = [y - (slope * x + intercept) for x, y in zip(xs, ys)]
-        if len(residuals) >= 2:
-            rse = statistics.pstdev(residuals)
-        else:
-            rse = 0.0
+        residuals = [y - (slope * x + intercept) for x, y in zip(xs, ys, strict=False)]
+        rse = statistics.pstdev(residuals) if len(residuals) >= 2 else 0.0
 
         margin = 1.96 * rse
         lower = max(0.0, predicted - margin)
@@ -870,7 +864,7 @@ class PredictiveModel:
         n = len(xs)
         sum_x = sum(xs)
         sum_y = sum(ys)
-        sum_xy = sum(x * y for x, y in zip(xs, ys))
+        sum_xy = sum(x * y for x, y in zip(xs, ys, strict=False))
         sum_xx = sum(x * x for x in xs)
         denom = n * sum_xx - sum_x ** 2
         if denom == 0:
@@ -886,7 +880,7 @@ class PredictiveModel:
             return 0.0
         y_mean = statistics.mean(ys)
         ss_tot = sum((y - y_mean) ** 2 for y in ys)
-        ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
+        ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys, strict=False))
         if ss_tot == 0.0:
             return 1.0 if ss_res == 0.0 else 0.0
         return max(0.0, 1.0 - ss_res / ss_tot)

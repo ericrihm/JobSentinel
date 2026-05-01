@@ -3,18 +3,35 @@ requires = ["setuptools>=75.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sentinel"
-version = "0.1.0"
-description = "AI-powered LinkedIn job scam detection and validation platform"
+name = "jobsentinel"
+version = "0.2.0"
+description = "AI-powered job scam detection — protect yourself from fake listings, ghost jobs, and recruitment fraud"
 requires-python = ">=3.12"
 license = "MIT"
+readme = "README.md"
 authors = [
     {name = "Eric Rihm", email = "ericrihm@gmail.com"},
 ]
-dependencies = [
-"click>=8.1",
-
+keywords = ["job-scam", "fraud-detection", "linkedin", "recruitment", "scam-detection", "job-search"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Internet :: WWW/HTTP",
+    "Typing :: Typed",
 ]
+dependencies = [
+    "click>=8.1",
+]
+
+[project.urls]
+Homepage = "https://jobsentinel.org"
+Repository = "https://github.com/ericrihm/JobSentinel"
+Issues = "https://github.com/ericrihm/JobSentinel/issues"
+Documentation = "https://jobsentinel.org"
 
 [project.optional-dependencies]
 dev = [

@@ -15,8 +15,6 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any
 
-from sentinel.models import JobPosting, ScamSignal, SignalCategory
-
 logger = logging.getLogger(__name__)
 
 
@@ -361,7 +359,7 @@ class ActiveLearningSelector:
         committee_disagreement = _std_dev(scores_vals) if len(scores_vals) >= 2 else 0.0
         emc = self.expected_model_change(job_id, ensemble_score, len(scores_vals))
 
-        composite = (
+        (
             self._uncertainty_w * uncertainty
             + self._committee_w * committee_disagreement
             + self._model_change_w * emc

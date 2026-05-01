@@ -337,7 +337,6 @@ class EnsembleScorer:
             EnsembleResult with all method scores, disagreement, and
             confidence_adjustment (-0.2 when uncertain, 0.0 otherwise).
         """
-        from sentinel.models import SignalCategory
 
         # --- Method 1: Primary log-odds Bayesian scorer ---
         primary, _conf = score_signals(signals)
@@ -495,7 +494,7 @@ class EnsembleScorer:
 
     def _persist_method_accuracy(self, db) -> None:
         """Store per-method accuracy as a JSON record in the DB."""
-        accs = self.get_method_accuracy()
+        self.get_method_accuracy()
         try:
             db.conn.execute(
                 """

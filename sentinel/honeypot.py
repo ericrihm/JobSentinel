@@ -14,9 +14,8 @@ import re
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ class HoneypotInteraction:
     message_content: str = ""
     sender_info: dict = field(default_factory=dict)
     scam_signals_detected: list[str] = field(default_factory=list)
-    response_sent: Optional[str] = None
+    response_sent: str | None = None
     escalation_stage: int = 1  # 1=initial contact, 2=info request, 3=payment demand, 4=follow-up
 
     def to_dict(self) -> dict:
@@ -72,7 +71,7 @@ class HoneypotInteraction:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "HoneypotInteraction":
+    def from_dict(cls, data: dict) -> HoneypotInteraction:
         obj = cls()
         obj.interaction_id = data.get("interaction_id", obj.interaction_id)
         obj.timestamp = data.get("timestamp", obj.timestamp)
@@ -96,7 +95,7 @@ class HoneypotProfile:
     target_job_categories: list[str] = field(default_factory=list)
     status: ProfileStatus = ProfileStatus.ACTIVE
     creation_date: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
-    last_interaction: Optional[str] = None
+    last_interaction: str | None = None
     interactions: list[HoneypotInteraction] = field(default_factory=list)
     # Postings this persona has applied to: {job_url: applied_at}
     applications: dict[str, str] = field(default_factory=dict)
@@ -119,7 +118,7 @@ class HoneypotProfile:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "HoneypotProfile":
+    def from_dict(cls, data: dict) -> HoneypotProfile:
         obj = cls()
         obj.profile_id = data.get("profile_id", obj.profile_id)
         obj.name = data.get("name", "")
@@ -238,7 +237,7 @@ class HoneypotManager:
         email: str,
         resume_summary: str,
         target_job_categories: list[str],
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> HoneypotProfile:
         """Create a new honeypot persona and register it."""
         profile = HoneypotProfile(
@@ -253,10 +252,10 @@ class HoneypotManager:
         logger.info("Created honeypot profile %s (%s)", profile.profile_id, name)
         return profile
 
-    def get_profile(self, profile_id: str) -> Optional[HoneypotProfile]:
+    def get_profile(self, profile_id: str) -> HoneypotProfile | None:
         return self._profiles.get(profile_id)
 
-    def list_profiles(self, status: Optional[ProfileStatus] = None) -> list[HoneypotProfile]:
+    def list_profiles(self, status: ProfileStatus | None = None) -> list[HoneypotProfile]:
         profiles = list(self._profiles.values())
         if status is not None:
             profiles = [p for p in profiles if p.status == status]
@@ -344,10 +343,10 @@ class HoneypotManager:
         profile_id: str,
         channel: Channel,
         message_content: str,
-        sender_info: Optional[dict] = None,
-        response_sent: Optional[str] = None,
+        sender_info: dict | None = None,
+        response_sent: str | None = None,
         escalation_stage: int = 1,
-    ) -> Optional[HoneypotInteraction]:
+    ) -> HoneypotInteraction | None:
         """Log a new interaction against a honeypot profile."""
         profile = self._profiles.get(profile_id)
         if profile is None:
@@ -532,13 +531,13 @@ class InteractionAnalyzer:
 
     def analyze_response_time(
         self, interactions: list[HoneypotInteraction]
-    ) -> Optional[float]:
+    ) -> float | None:
         """Return average hours between consecutive interactions, or None if < 2."""
         if len(interactions) < 2:
             return None
         deltas: list[float] = []
         sorted_ix = sorted(interactions, key=lambda i: i.timestamp)
-        for a, b in zip(sorted_ix, sorted_ix[1:]):
+        for a, b in zip(sorted_ix, sorted_ix[1:], strict=False):
             try:
                 ta = datetime.fromisoformat(a.timestamp)
                 tb = datetime.fromisoformat(b.timestamp)
@@ -626,7 +625,7 @@ class InteractionAnalyzer:
     def build_scammer_profile(
         self,
         interactions: list[HoneypotInteraction],
-        scammer_id: Optional[str] = None,
+        scammer_id: str | None = None,
     ) -> ScammerBehaviorProfile:
         """Build a behavioral fingerprint from a list of interactions."""
         profile = ScammerBehaviorProfile(
@@ -886,8 +885,8 @@ class IntelligenceExtractor:
     ) -> int:
         """Save derived candidate signals to the patterns table. Returns count saved."""
         signals = self.derive_new_signals(interactions)
-        from datetime import UTC, datetime
         import uuid as _uuid
+        from datetime import UTC, datetime
 
         now = datetime.now(UTC).isoformat()
         saved = 0
@@ -951,8 +950,8 @@ class DeploymentStrategy:
         return sorted(suspicious, key=lambda j: j["scam_score"], reverse=True)
 
     def select_persona(
-        self, job: dict, profiles: Optional[list[HoneypotProfile]] = None
-    ) -> Optional[HoneypotProfile]:
+        self, job: dict, profiles: list[HoneypotProfile] | None = None
+    ) -> HoneypotProfile | None:
         """Select the best active persona for a given job posting.
 
         Prefers personas whose target_job_categories overlap with the job title/industry.
@@ -979,7 +978,7 @@ class DeploymentStrategy:
         job: dict,
         min_scam_score: float = 0.4,
         skip_already_honeypotted: bool = True,
-    ) -> Optional[DeploymentDecision]:
+    ) -> DeploymentDecision | None:
         """Decide whether and which persona to deploy against a single job.
 
         Returns None if the posting is below threshold or already honeypotted.
@@ -1034,7 +1033,7 @@ class DeploymentStrategy:
     # ------------------------------------------------------------------
 
     def ab_targeting_analysis(
-        self, profiles: Optional[list[HoneypotProfile]] = None
+        self, profiles: list[HoneypotProfile] | None = None
     ) -> dict:
         """Analyze which persona characteristics attract more scammer contact.
 

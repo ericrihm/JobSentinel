@@ -417,7 +417,7 @@ class EvasionDetector:
             ``severity`` is "high" when score >= 0.4 and "low" otherwise.
         """
         near_misses: list[dict] = []
-        fired_names = {s.name for s in signals}
+        {s.name for s in signals}
 
         # Near-miss only interesting when score is non-trivial
         if score < 0.1:
@@ -460,7 +460,7 @@ class EvasionDetector:
         """Return True if normalization changed more than 1% of characters."""
         if not original:
             return False
-        changed = sum(1 for a, b in zip(original, normalized) if a != b)
+        changed = sum(1 for a, b in zip(original, normalized, strict=False) if a != b)
         # Also count length difference (invisible chars were removed)
         length_diff = abs(len(original) - len(normalized))
         total_changes = changed + length_diff
@@ -475,7 +475,7 @@ class EvasionDetector:
 
         # Find changed character positions (compare up to shorter length)
         diff_chars: list[str] = []
-        for a, b in zip(original, normalized):
+        for a, b in zip(original, normalized, strict=False):
             if a != b and a not in diff_chars:
                 diff_chars.append(a)
         if diff_chars:

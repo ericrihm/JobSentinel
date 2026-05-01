@@ -14,16 +14,15 @@ detection improvements and allocates more research cycles to high-value areas.
 
 import json
 import logging
-import math
 import random
 import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Optional
 
 from sentinel.db import SentinelDB
+
 try:
     from sentinel.ecosystem import publish_observation
 except ImportError:
@@ -46,7 +45,7 @@ class ResearchTopic:
     area: str
     priority: float  # 0-1, based on detection weakness
     reason: str
-    last_researched: Optional[str] = None  # ISO timestamp
+    last_researched: str | None = None  # ISO timestamp
 
 
 @dataclass
@@ -194,7 +193,7 @@ class PromptOptimizer:
             )
             for t in _DEFAULT_TEMPLATES
         ]
-        self._deep_research_strategy: Optional[object] = None
+        self._deep_research_strategy: object | None = None
         try:
             from sentinel._research_plugin import DeepResearchStrategy, plugin_available
             if plugin_available():
@@ -204,7 +203,7 @@ class PromptOptimizer:
             pass
 
     @property
-    def deep_research_strategy(self) -> Optional[object]:
+    def deep_research_strategy(self) -> object | None:
         return self._deep_research_strategy
 
     def select_template(self) -> PromptTemplate:

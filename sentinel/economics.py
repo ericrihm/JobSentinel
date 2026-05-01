@@ -16,7 +16,6 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Optional
 
 from sentinel.models import JobPosting, ScamSignal, SignalCategory
 
@@ -1103,7 +1102,7 @@ class GeographicValidator:
                 weight=0.60,
                 confidence=0.60,
                 detail=(
-                    f"US LLC claims London office — inconsistent registration type"
+                    "US LLC claims London office — inconsistent registration type"
                 ),
                 evidence=f"company={company!r}",
             )
