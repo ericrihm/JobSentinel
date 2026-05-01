@@ -162,7 +162,7 @@ export function checkCryptoPayment(job) {
 export function checkNoCompanyPresence(job) {
   if (!String(job.company || '').trim()) {
     return {
-      name: 'no_company',
+      name: 'no_company_presence',
       category: 'warning',
       weight: 0.45,
       confidence: 0.50,
@@ -172,7 +172,7 @@ export function checkNoCompanyPresence(job) {
   }
   if (!String(job.company_linkedin_url || '').trim()) {
     return {
-      name: 'no_company',
+      name: 'no_company_presence',
       category: 'warning',
       weight: 0.45,
       confidence: 0.50,
@@ -228,7 +228,7 @@ export function checkReshipping(job) {
   const m = text.match(RE_RESHIPPING);
   if (!m) return null;
   return {
-    name: 'reshipping',
+    name: 'reshipping_scam',
     category: 'red_flag',
     weight: 0.90,
     confidence: 0.85,
@@ -349,7 +349,7 @@ export function checkWfhUnrealistic(job) {
   const m = text.match(RE_NO_EXPERIENCE);
   if (!m) return null;
   return {
-    name: 'wfh_unrealistic',
+    name: 'wfh_unrealistic_pay',
     category: 'warning',
     weight: 0.65,
     confidence: 0.68,
