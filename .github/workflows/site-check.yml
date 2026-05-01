@@ -1,0 +1,19 @@
+name: Site Consistency Check
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**']
+  pull_request:
+    paths: ['docs/**']
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run site consistency checks
+        run: bash scripts/check-site.sh
