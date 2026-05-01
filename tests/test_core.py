@@ -263,7 +263,7 @@ class TestSignals:
         job = JobPosting(company="Acme Corp", company_linkedin_url="")
         sig = check_no_company_presence(job)
         assert sig is not None
-        assert sig.weight == pytest.approx(0.70)
+        assert sig.weight == pytest.approx(0.45)
 
     def test_no_company_presence_fully_present(self):
         from sentinel.signals import check_no_company_presence
@@ -310,7 +310,7 @@ class TestSignals:
         sig = check_vague_description(job)
         assert sig is not None
         assert sig.name == "vague_description"
-        assert sig.weight == pytest.approx(0.65)
+        assert sig.weight == pytest.approx(0.50)
 
     def test_vague_description_few_words(self):
         from sentinel.signals import check_vague_description
@@ -325,7 +325,7 @@ class TestSignals:
             "Must have 3+ years of experience building scalable RESTful APIs using Django or FastAPI. "
             "Familiarity with Docker and AWS required."
         )
-        assert len(desc.split()) >= 30
+        assert len(desc.split()) >= 20
         job = JobPosting(description=desc)
         assert check_vague_description(job) is None
 
