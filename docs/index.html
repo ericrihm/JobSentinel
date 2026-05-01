@@ -38,6 +38,42 @@
     }
   }
   </script>
+  <style>
+.trust-bar {
+  margin-top: 48px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  background: var(--surface, #12141a);
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.trust-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted, rgba(255,255,255,0.55));
+  font-weight: 600;
+}
+.trust-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--muted, rgba(255,255,255,0.55));
+}
+.trust-stats strong {
+  color: var(--text, rgba(255,255,255,0.92));
+  font-weight: 700;
+}
+.trust-sep {
+  opacity: 0.3;
+}
+  </style>
 </head>
 <body>
 
@@ -78,13 +114,22 @@
     <h1 class="hero-title fade-up delay-1">
       AI-Powered<br>Job Scam Detection
     </h1>
-    <p class="hero-tagline fade-up delay-2">
-      Protect yourself from fraudulent job postings with 50+ detection signals,
-      intelligent scoring, and real-time analysis across every major job platform.
-    </p>
+    <p class="hero-tagline fade-up delay-2">1 in 6 job postings is fraudulent. We scan every listing with 54 signals so you don't have to gamble with your career.</p>
     <div class="hero-actions fade-up delay-3">
       <a href="analyze.html" class="btn btn-primary">🔍 Try the Live Demo</a>
       <a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener" class="btn btn-secondary">⭐ Star on GitHub</a>
+    </div>
+    <div class="trust-bar fade-up delay-3">
+      <span class="trust-label">Protecting job seekers</span>
+      <div class="trust-stats">
+        <span><strong>54</strong> detection signals</span>
+        <span class="trust-sep">·</span>
+        <span><strong>5</strong> verified sources</span>
+        <span class="trust-sep">·</span>
+        <span><strong>2,789</strong> tests passing</span>
+        <span class="trust-sep">·</span>
+        <span><strong>MIT</strong> licensed</span>
+      </div>
     </div>
     <div class="fade-up delay-3">
       <div class="hero-code">

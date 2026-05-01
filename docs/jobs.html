@@ -217,6 +217,51 @@
       font-weight: 500;
     }
 
+    .job-company-meta {
+      font-size: 0.75rem;
+      color: var(--text-tertiary, rgba(255,255,255,0.35));
+      margin-top: 2px;
+    }
+
+    .job-freshness {
+      font-size: 0.75rem;
+      color: var(--text-tertiary, rgba(255,255,255,0.35));
+      margin-top: 8px;
+    }
+
+    .verify-explainer {
+      padding: 24px 0;
+      border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+    }
+    .verify-steps {
+      display: flex;
+      gap: 32px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .verify-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      max-width: 280px;
+    }
+    .verify-step svg {
+      flex-shrink: 0;
+      color: var(--green, #3fb950);
+      margin-top: 2px;
+    }
+    .verify-step strong {
+      display: block;
+      font-size: 0.88rem;
+      color: var(--text, rgba(255,255,255,0.92));
+      margin-bottom: 2px;
+    }
+    .verify-step span {
+      font-size: 0.8rem;
+      color: var(--muted, rgba(255,255,255,0.55));
+      line-height: 1.4;
+    }
+
     .job-meta {
       display: flex;
       flex-wrap: wrap;
@@ -352,7 +397,7 @@
     </div>
     <h1 class="fade-up delay-1">Verified Safe Jobs</h1>
     <p class="fade-up delay-2">
-      Every listing below has been analyzed by our 54-signal engine and passed with zero risk flags. Updated every 6 hours.
+      Every listing below has passed our 54-signal fraud detection engine. Updated every 6 hours from verified sources.
     </p>
     <div class="jobs-stats-row fade-up delay-3">
       <div class="jobs-stat"><strong id="statScanned">&mdash;</strong><span>Jobs scanned</span></div>
@@ -366,6 +411,35 @@
 <!-- CONTEXT BANNER -->
 <div class="scam-rate-banner">
   <span>&#9888;&#65039;</span> 1 in 6 remote job postings contains fraudulent signals. These listings have been verified clean.
+</div>
+
+<!-- VERIFY EXPLAINER -->
+<div class="verify-explainer">
+  <div class="container">
+    <div class="verify-steps">
+      <div class="verify-step">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <div>
+          <strong>Source verification</strong>
+          <span>Jobs scraped from real employer career pages and trusted job boards</span>
+        </div>
+      </div>
+      <div class="verify-step">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <div>
+          <strong>54-signal scan</strong>
+          <span>Every listing analyzed for fraud patterns, ghost job indicators, and red flags</span>
+        </div>
+      </div>
+      <div class="verify-step">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+        <div>
+          <strong>Zero risk flags</strong>
+          <span>Only listings that score below 20/100 risk make it to this page</span>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- FILTER BAR -->
@@ -522,6 +596,13 @@ function loadJobs() {
   });
 }
 
+function sourceIcon(source) {
+  var s = (source || '').toLowerCase();
+  if (s.includes('remoteok')) return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>';
+  if (s.includes('adzuna')) return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+  return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+}
+
 function renderJobs(jobs) {
   var grid = document.getElementById('jobsGrid');
   var loading = document.getElementById('jobsLoading');
@@ -545,14 +626,18 @@ function renderJobs(jobs) {
       + '<div class="job-card">'
       +   '<div class="job-card-header">'
       +     '<span class="verified-badge">🛡 Verified Safe</span>'
-      +     '<span class="job-source">via ' + escHtml(job.source || 'Unknown') + '</span>'
+      +     '<span class="job-source" title="Sourced directly from ' + escHtml(job.source || 'Unknown') + '">' + sourceIcon(job.source) + ' ' + escHtml(job.source || 'Unknown') + '</span>'
       +   '</div>'
       +   '<h3 class="job-title">' + escHtml(job.title || 'Untitled Position') + '</h3>'
       +   '<div class="job-company">' + escHtml(job.company || 'Company') + '</div>'
+      +   '<div class="job-company-meta">'
+      +     (job.source ? 'Direct from ' + escHtml(job.source) : '')
+      +   '</div>'
       +   '<div class="job-meta">'
       +     (job.location ? '<span class="job-location">📍 ' + escHtml(job.location) + '</span>' : '')
       +     (salary ? '<span class="job-salary">💰 ' + salary + '</span>' : '')
       +   '</div>'
+      +   (job.verified_at ? '<div class="job-freshness">Verified ' + timeAgo(new Date(job.verified_at)) + '</div>' : '')
       +   '<div class="job-signals">'
       +     '<span class="signal-check">✓ ' + signals + ' signals checked</span>'
       +     '<span class="signal-check">✓ Score: ' + score + '/100</span>'
