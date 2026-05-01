@@ -1337,10 +1337,10 @@ def check_evolved_mlm(job: JobPosting) -> ScamSignal | None:
 
 
 _CONTACT_SUSPICIOUS = re.compile(
-    r"\b(apply (via|through|on|at) (telegram|whatsapp)|"
-    r"contact (us |me )?(on|via|at|through) (telegram|whatsapp)|"
-    r"(telegram|whatsapp) (only|to apply|for (details|info|more))|"
-    r"send (message|msg|text|DM) (on|via|to) (telegram|whatsapp))\b",
+    r"\b(a{1,2}p{1,2}p{0,2}l{1,2}y{1,2} (via|through|on|at) (t{1,2}e{1,2}l{1,2}e{1,2}g{1,2}r{1,2}a{1,2}m{1,2}|w{1,2}h{1,2}a{1,2}t{1,2}s{0,2}a{1,2}p{1,2}p{0,2})|"
+    r"c{1,2}o{1,2}n{1,2}t{1,2}a{1,2}c{0,2}t{1,2} (us |me )?(on|via|at|through) (t{1,2}e{1,2}l{1,2}e{1,2}g{1,2}r{1,2}a{1,2}m{1,2}|w{1,2}h{1,2}a{1,2}t{1,2}s{0,2}a{1,2}p{1,2}p{0,2})|"
+    r"(t{1,2}e{1,2}l{1,2}e{1,2}g{1,2}r{1,2}a{1,2}m{1,2}|w{1,2}h{1,2}a{1,2}t{1,2}s{0,2}a{1,2}p{1,2}p{0,2}) (only|to apply|for (details|info|more))|"
+    r"s{1,2}e{1,2}n{1,2}d{1,2} (message|msg|text|DM) (on|via|to) (t{1,2}e{1,2}l{1,2}e{1,2}g{1,2}r{1,2}a{1,2}m{1,2}|w{1,2}h{1,2}a{1,2}t{1,2}s{0,2}a{1,2}p{1,2}p{0,2}))\b",
     re.IGNORECASE,
 )
 
