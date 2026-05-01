@@ -146,7 +146,6 @@
     .url-input-wrap {
       display: flex;
       align-items: center;
-      gap: 0;
       padding: 16px 18px;
       gap: 10px;
     }
@@ -691,6 +690,7 @@ Red flags to watch for:
               aria-label="Job posting URL"
             />
           </div>
+          <p style="font-size:0.8rem;color:var(--text-muted);margin:0.5rem 0 0;text-align:center">URL analysis requires the API. For offline use, paste the job description in the Text tab.</p>
         </div>
 
         <div class="input-actions">
@@ -746,7 +746,7 @@ Red flags to watch for:
           <span class="sidebar-card-title">About</span>
         </div>
         <div class="tip-list">
-          <div class="tip-item"><span class="tip-icon">🛡</span><span>JobSentinel uses 40+ signals across 5 categories to detect scams, ghost jobs, and fraudulent postings.</span></div>
+          <div class="tip-item"><span class="tip-icon">🛡</span><span>JobSentinel uses 50+ signals across 5 categories to detect scams, ghost jobs, and fraudulent postings.</span></div>
           <div class="tip-item"><span class="tip-icon">🔓</span><span>Open source and MIT licensed. Analysis runs via our API with a client-side fallback.</span></div>
           <div class="tip-item"><span class="tip-icon">⭐</span><span><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">Star on GitHub</a> to support the project.</span></div>
         </div>
@@ -789,11 +789,13 @@ Red flags to watch for:
           <li><a href="https://github.com/ericrihm/JobSentinel/discussions" target="_blank" rel="noopener">Discussions</a></li>
           <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
           <li><a href="https://jobsentinel.org" target="_blank" rel="noopener">jobsentinel.org</a></li>
+          <li><a href="privacy.html">Privacy Policy</a></li>
+          <li><a href="terms.html">Terms of Service</a></li>
         </ul>
       </div>
     </div>
     <div class="footer-bottom">
-      <p>© 2025 JobSentinel. Released under the MIT License.</p>
+      <p>© 2026 JobSentinel. Released under the MIT License.</p>
       <div class="footer-badges">
         <span class="badge badge-green">Open Source</span>
         <span class="badge badge-accent">MIT License</span>
@@ -1067,9 +1069,37 @@ function detectGrammarIssues(text) {
 }
 
 function runClientSide(text) {
+  // Use the full 54-signal engine if loaded via analyze-bridge.js
+  if (window.sentinelAnalyze) {
+    const full = window.sentinelAnalyze(text);
+    const triggered = full.signals.map(s => ({
+      id: s.id, label: s.label, category: s.category,
+      weight: s.weight, evidence: s.evidence, detail: s.detail,
+    }));
+    const pct = full.scamScore / 100;
+    const riskLevel = full.scamScore >= 65 ? 'high' : full.scamScore >= 40 ? 'suspicious' : full.scamScore >= 20 ? 'low' : 'safe';
+    const riskLabels = { safe: 'Likely Safe', low: 'Low Risk', suspicious: 'Suspicious', high: 'High Risk — Likely Scam' };
+    const byCategory = (cat) => triggered.filter(s => s.category === cat).map(s => ({ name: s.label, detail: s.detail, evidence: s.evidence }));
+    return {
+      scam_score:       pct,
+      confidence:       Math.min(0.95, 0.3 + triggered.length * 0.1),
+      risk_level:       riskLevel,
+      risk_label:       riskLabels[riskLevel],
+      red_flags:        byCategory('red_flag'),
+      warnings:         byCategory('warning'),
+      ghost_indicators: byCategory('ghost_job'),
+      positive_signals: byCategory('positive'),
+      structural:       byCategory('structural'),
+      signal_count:     triggered.length,
+      analysis_time_ms: 0,
+      source:           full.source || 'client-side (full engine)',
+      _triggered:       triggered,
+    };
+  }
+
+  // Fallback: simple keyword matching (19 signals)
   const lower = text.toLowerCase();
   const triggered = [];
-
   SIGNALS.forEach(sig => {
     if (sig.id === 'grammar_issues') {
       if (detectGrammarIssues(text)) {
@@ -1080,35 +1110,27 @@ function runClientSide(text) {
     const hit = sig.keywords.find(kw => lower.includes(kw.toLowerCase()));
     if (hit) triggered.push({ ...sig, evidence: `Matched phrase: "${hit}"`, detail: hit });
   });
-
   let rawScore = 0;
   triggered.forEach(s => { rawScore += s.weight; });
   const scamScore = Math.max(0, Math.min(100, rawScore));
   const pct = scamScore / 100;
-
-  const redFlags         = triggered.filter(s => s.category === 'red_flag');
-  const warnings         = triggered.filter(s => s.category === 'warning');
-  const ghostIndicators  = triggered.filter(s => s.category === 'ghost_job');
-  const positiveSignals  = triggered.filter(s => s.category === 'positive');
-  const structural       = triggered.filter(s => s.category === 'structural');
-
   const riskLevel = scamScore >= 65 ? 'high' : scamScore >= 40 ? 'suspicious' : scamScore >= 20 ? 'low' : 'safe';
   const riskLabels = { safe: 'Likely Safe', low: 'Low Risk', suspicious: 'Suspicious', high: 'High Risk — Likely Scam' };
-
+  const byCategory = (cat) => triggered.filter(s => s.category === cat).map(s => ({ name: s.label, detail: s.category, evidence: s.evidence }));
   return {
     scam_score:       pct,
     confidence:       Math.min(0.95, 0.3 + triggered.length * 0.1),
     risk_level:       riskLevel,
     risk_label:       riskLabels[riskLevel],
-    red_flags:        redFlags.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
-    warnings:         warnings.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
-    ghost_indicators: ghostIndicators.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
-    positive_signals: positiveSignals.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
-    structural:       structural.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
+    red_flags:        byCategory('red_flag'),
+    warnings:         byCategory('warning'),
+    ghost_indicators: byCategory('ghost_job'),
+    positive_signals: byCategory('positive'),
+    structural:       byCategory('structural'),
     signal_count:     triggered.length,
     analysis_time_ms: 0,
-    source:           'client-side',
-    _triggered:       triggered,   // keep raw for weight display
+    source:           'client-side (basic)',
+    _triggered:       triggered,
   };
 }
 
@@ -1178,7 +1200,7 @@ async function handleAnalyze() {
       if (text) {
         showNotice(area, 'warn', '📡', 'API unreachable — running client-side analysis. Results may be less comprehensive.');
       } else {
-        showNotice(area, 'err', '⚠', 'Cannot analyze a URL without the API. Please paste the job description text instead.');
+        showNotice(area, 'err', '⚠', 'Cannot analyze a URL without the API. Copy the job description text from the posting and use the Text tab instead.');
         btn.classList.remove('loading');
         btn.disabled = false;
         return;
@@ -1489,5 +1511,6 @@ window.clearHistory   = clearHistory;
 window.reportPosting  = reportPosting;
 window.copyResults    = copyResults;
 </script>
+<script type="module" src="analyze-bridge.js"></script>
 </body>
 </html>
