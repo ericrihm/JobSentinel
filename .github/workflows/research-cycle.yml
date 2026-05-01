@@ -1,0 +1,317 @@
+name: Weekly Research Cycle
+
+on:
+  schedule:
+    # Sunday at midnight UTC
+    - cron: "0 0 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  research:
+    name: Innovation & Regression Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-3.12-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Prepare output directory
+        run: mkdir -p research-results
+
+      - name: Run innovation engine cycle
+        run: |
+          python - <<'PYEOF'
+          import json, sys, traceback
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          sys.path.insert(0, ".")
+          run_ts = datetime.now(UTC).isoformat()
+          output = {"run_timestamp": run_ts, "cycle": {}, "errors": []}
+
+          try:
+              from sentinel.innovation import InnovationFlywheel
+              from sentinel.db import SentinelDB
+              import tempfile, os
+
+              # Use a temp DB so the CI run is isolated
+              with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+                  db_path = tf.name
+
+              try:
+                  db = SentinelDB(db_path)
+                  fw = InnovationFlywheel(db=db)
+                  cycle_result = fw.run_cycle()
+                  output["cycle"] = cycle_result if isinstance(cycle_result, dict) else {"result": str(cycle_result)}
+              finally:
+                  os.unlink(db_path)
+          except Exception:
+              output["errors"].append(traceback.format_exc())
+
+          Path("research-results/cycle.json").write_text(json.dumps(output, indent=2, default=str))
+          print("Innovation cycle complete.")
+          PYEOF
+
+      - name: Run detection regression check
+        id: regression
+        run: |
+          python - <<'PYEOF'
+          import json, sys, traceback
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          sys.path.insert(0, ".")
+          run_ts = datetime.now(UTC).isoformat()
+          output = {
+              "run_timestamp": run_ts,
+              "regressions": [],
+              "signals_checked": 0,
+              "baseline_accuracy": None,
+              "current_accuracy": None,
+              "regression_detected": False,
+              "errors": [],
+          }
+
+          # Golden fixture: known scam patterns that must always score >= 0.6
+          SCAM_FIXTURES = [
+              {
+                  "title": "Work From Home - Earn $5000/week guaranteed!",
+                  "description": "No experience needed. Guaranteed income. Send $50 registration fee via wire transfer. Crypto payments accepted.",
+                  "company": "",
+                  "expected_min": 0.6,
+              },
+              {
+                  "title": "Package Reshipping Coordinator",
+                  "description": "Receive packages at your home address and reship them. We pay $25 per package. No questions asked.",
+                  "company": "Quick Cash LLC",
+                  "expected_min": 0.5,
+              },
+              {
+                  "title": "Remote Data Entry - $200/hour",
+                  "description": "Apply NOW! Only 3 spots left! Email us at recruiter@gmail.com. We need your SSN and bank account for payroll setup.",
+                  "company": "",
+                  "expected_min": 0.6,
+              },
+          ]
+
+          # Golden fixture: known legitimate patterns that must always score < 0.5
+          LEGIT_FIXTURES = [
+              {
+                  "title": "Senior Software Engineer",
+                  "description": (
+                      "We are looking for a Senior Software Engineer to join our platform team. "
+                      "Requirements: 5+ years Python, experience with distributed systems, "
+                      "strong communication skills. Salary range: $150,000–$185,000. "
+                      "Apply through our careers portal."
+                  ),
+                  "company": "Acme Corp",
+                  "expected_max": 0.5,
+              },
+          ]
+
+          try:
+              from sentinel.signals import extract_signals
+              from sentinel.scorer import ScamScorer
+              from sentinel.models import JobPosting
+
+              scorer = ScamScorer()
+              regressions = []
+              signals_checked = 0
+
+              for fixture in SCAM_FIXTURES:
+                  job = JobPosting(
+                      job_id=f"fixture-scam-{signals_checked}",
+                      title=fixture["title"],
+                      description=fixture["description"],
+                      company=fixture.get("company", ""),
+                      source="fixture",
+                  )
+                  signals = extract_signals(job)
+                  result = scorer.score(job, signals)
+                  signals_checked += 1
+                  if result.scam_score < fixture["expected_min"]:
+                      regressions.append({
+                          "fixture": fixture["title"],
+                          "expected_min": fixture["expected_min"],
+                          "actual_score": round(result.scam_score, 4),
+                          "type": "scam_missed",
+                      })
+
+              for fixture in LEGIT_FIXTURES:
+                  job = JobPosting(
+                      job_id=f"fixture-legit-{signals_checked}",
+                      title=fixture["title"],
+                      description=fixture["description"],
+                      company=fixture.get("company", ""),
+                      source="fixture",
+                  )
+                  signals = extract_signals(job)
+                  result = scorer.score(job, signals)
+                  signals_checked += 1
+                  if result.scam_score > fixture["expected_max"]:
+                      regressions.append({
+                          "fixture": fixture["title"],
+                          "expected_max": fixture["expected_max"],
+                          "actual_score": round(result.scam_score, 4),
+                          "type": "false_positive",
+                      })
+
+              output["regressions"] = regressions
+              output["signals_checked"] = signals_checked
+              output["regression_detected"] = len(regressions) > 0
+
+          except Exception:
+              output["errors"].append(traceback.format_exc())
+              output["regression_detected"] = False
+
+          Path("research-results/regression.json").write_text(json.dumps(output, indent=2, default=str))
+
+          # Signal downstream steps
+          import os
+          env_file = os.environ.get("GITHUB_ENV", "/dev/null")
+          with open(env_file, "a") as f:
+              f.write(f"REGRESSION_DETECTED={'true' if output['regression_detected'] else 'false'}\n")
+              f.write(f"REGRESSION_COUNT={len(output['regressions'])}\n")
+
+          print(f"Checked {signals_checked} fixtures. Regressions: {len(output['regressions'])}")
+          if output["regression_detected"]:
+              print("REGRESSIONS DETECTED:")
+              for r in output["regressions"]:
+                  print(f"  - {r}")
+          PYEOF
+
+      - name: Write job summary
+        if: always()
+        run: |
+          python - <<'EOF'
+          import json, os
+          from pathlib import Path
+
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
+          regression_detected = os.environ.get("REGRESSION_DETECTED", "false") == "true"
+          regression_count = int(os.environ.get("REGRESSION_COUNT", "0"))
+
+          lines = ["## Weekly Research Cycle", ""]
+
+          # Cycle results
+          cycle_path = Path("research-results/cycle.json")
+          if cycle_path.exists():
+              try:
+                  cycle = json.loads(cycle_path.read_text())
+                  lines += ["### Innovation Engine", ""]
+                  if cycle.get("errors"):
+                      lines.append(f"Errors: {len(cycle['errors'])}")
+                  else:
+                      c = cycle.get("cycle", {})
+                      if c:
+                          lines += [
+                              "| Key | Value |",
+                              "|-----|-------|",
+                          ]
+                          for k, v in list(c.items())[:8]:
+                              lines.append(f"| {k} | {v} |")
+                      else:
+                          lines.append("Cycle ran successfully (no structured output).")
+                  lines.append("")
+              except Exception as exc:
+                  lines.append(f"Could not parse cycle results: {exc}")
+
+          # Regression results
+          reg_path = Path("research-results/regression.json")
+          if reg_path.exists():
+              try:
+                  reg = json.loads(reg_path.read_text())
+                  icon = "❌" if reg.get("regression_detected") else "✅"
+                  lines += [
+                      f"### {icon} Detection Regression Check",
+                      "",
+                      f"Fixtures checked: **{reg.get('signals_checked', 0)}**",
+                      f"Regressions found: **{len(reg.get('regressions', []))}**",
+                      "",
+                  ]
+                  if reg.get("regressions"):
+                      lines += ["| Fixture | Type | Expected | Actual |", "|---------|------|----------|--------|"]
+                      for r in reg["regressions"]:
+                          expected = r.get("expected_min") or r.get("expected_max")
+                          direction = "≥" if "expected_min" in r else "≤"
+                          lines.append(f"| {r['fixture'][:60]} | {r['type']} | {direction}{expected} | {r['actual_score']} |")
+              except Exception as exc:
+                  lines.append(f"Could not parse regression results: {exc}")
+
+          with open(step_summary, "a") as fh:
+              fh.write("\n".join(lines) + "\n")
+          EOF
+
+      - name: Upload research artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-results-${{ github.run_number }}
+          path: research-results/
+          retention-days: 90
+
+      - name: Create GitHub issue for regressions
+        if: env.REGRESSION_DETECTED == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'research-results/regression.json';
+            let body = '## Detection Regression Report\n\n';
+
+            try {
+              const reg = JSON.parse(fs.readFileSync(path, 'utf8'));
+              body += `**Run:** ${reg.run_timestamp}\n`;
+              body += `**Fixtures checked:** ${reg.signals_checked}\n`;
+              body += `**Regressions detected:** ${reg.regressions.length}\n\n`;
+
+              if (reg.regressions.length > 0) {
+                body += '### Failing Fixtures\n\n';
+                body += '| Fixture | Type | Expected | Actual |\n';
+                body += '|---------|------|----------|--------|\n';
+                for (const r of reg.regressions) {
+                  const expected = r.expected_min != null ? `≥${r.expected_min}` : `≤${r.expected_max}`;
+                  body += `| ${r.fixture.substring(0, 60)} | ${r.type} | ${expected} | ${r.actual_score} |\n`;
+                }
+              }
+
+              if (reg.errors && reg.errors.length > 0) {
+                body += '\n### Errors\n\n```\n' + reg.errors.join('\n') + '\n```\n';
+              }
+            } catch (err) {
+              body += `Could not parse regression report: ${err}\n`;
+            }
+
+            body += `\n---\n*Generated by [Weekly Research Cycle](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*`;
+
+            const weekStr = new Date().toISOString().slice(0, 10);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Regression] Detection accuracy regression detected — ${weekStr}`,
+              body: body,
+              labels: ['regression', 'automated'],
+            });

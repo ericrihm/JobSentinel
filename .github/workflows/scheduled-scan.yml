@@ -1,0 +1,221 @@
+name: Scheduled Job Scan
+
+on:
+  schedule:
+    # Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
+    - cron: "0 0,6,12,18 * * *"
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "Search query (default: software engineer)"
+        required: false
+        default: "software engineer"
+      location:
+        description: "Location filter (default: remote)"
+        required: false
+        default: "remote"
+
+permissions:
+  contents: read
+
+env:
+  SCAN_QUERY: ${{ github.event.inputs.query || 'software engineer' }}
+  SCAN_LOCATION: ${{ github.event.inputs.location || 'remote' }}
+
+jobs:
+  scan:
+    name: Fetch & Score Job Postings
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-3.12-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[web]"
+
+      - name: Prepare output directory
+        run: mkdir -p scan-results
+
+      - name: Run ingestion pipeline
+        env:
+          # Set optional API keys from repository secrets when configured
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
+          USAJOBS_EMAIL: ${{ secrets.USAJOBS_EMAIL }}
+        run: |
+          python - <<'PYEOF'
+          import json, os, sys, traceback
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          # Minimal sentinel import guard
+          sys.path.insert(0, ".")
+
+          run_ts = datetime.now(UTC).isoformat()
+          query = os.environ.get("SCAN_QUERY", "software engineer")
+          location = os.environ.get("SCAN_LOCATION", "remote")
+
+          results = {
+              "run_timestamp": run_ts,
+              "query": query,
+              "location": location,
+              "sources": [],
+              "summary": {},
+              "errors": [],
+          }
+
+          source_names = ["RemoteOK", "Adzuna", "TheMuse", "USAJobs", "Remotive"]
+
+          try:
+              from sentinel.sources import (
+                  RemoteOKAdapter,
+                  AdzunaAdapter,
+                  TheMuseAdapter,
+                  USAJobsAdapter,
+                  RemotiveAdapter,
+              )
+              from sentinel.scorer import ScamScorer
+              from sentinel.knowledge import KnowledgeBase
+              from sentinel.signals import extract_signals
+
+              adapters = [
+                  RemoteOKAdapter(),
+                  AdzunaAdapter(),
+                  TheMuseAdapter(),
+                  USAJobsAdapter(),
+                  RemotiveAdapter(),
+              ]
+
+              scorer = ScamScorer()
+              kb = KnowledgeBase()
+
+              total_fetched = 0
+              total_high_risk = 0
+
+              for adapter in adapters:
+                  name = type(adapter).__name__.replace("Adapter", "")
+                  try:
+                      jobs = adapter.fetch(query=query, location=location, limit=25)
+                      scored = []
+                      high_risk = 0
+                      for job in jobs:
+                          try:
+                              signals = extract_signals(job)
+                              result = scorer.score(job, signals)
+                              entry = {
+                                  "id": job.job_id,
+                                  "title": job.title,
+                                  "company": job.company,
+                                  "source": job.source,
+                                  "scam_score": round(result.scam_score, 4),
+                                  "label": result.label,
+                                  "signal_count": len(signals),
+                              }
+                              scored.append(entry)
+                              if result.scam_score >= 0.6:
+                                  high_risk += 1
+                          except Exception as exc:
+                              results["errors"].append(f"{name}: score error: {exc}")
+
+                      total_fetched += len(jobs)
+                      total_high_risk += high_risk
+                      results["sources"].append({
+                          "name": name,
+                          "jobs_fetched": len(jobs),
+                          "high_risk": high_risk,
+                          "jobs": scored,
+                      })
+                  except Exception as exc:
+                      results["errors"].append(f"{name}: fetch error: {traceback.format_exc()}")
+                      results["sources"].append({"name": name, "jobs_fetched": 0, "high_risk": 0, "jobs": []})
+
+              results["summary"] = {
+                  "total_fetched": total_fetched,
+                  "total_high_risk": total_high_risk,
+                  "sources_queried": len(adapters),
+                  "error_count": len(results["errors"]),
+              }
+
+          except ImportError as exc:
+              results["errors"].append(f"Import error: {exc}")
+              results["summary"] = {"total_fetched": 0, "total_high_risk": 0, "sources_queried": 0, "error_count": 1}
+
+          out_path = Path("scan-results") / f"scan_{run_ts[:10]}.json"
+          out_path.write_text(json.dumps(results, indent=2, default=str))
+          print(f"Wrote results to {out_path}")
+
+          # Also emit a flat summary for the step summary
+          summary_path = Path("scan-results") / "latest_summary.json"
+          summary_path.write_text(json.dumps(results["summary"], indent=2))
+          PYEOF
+
+      - name: Write job summary
+        if: always()
+        run: |
+          python - <<'EOF'
+          import json, os
+          from pathlib import Path
+
+          summary_path = Path("scan-results/latest_summary.json")
+          if not summary_path.exists():
+              print("No summary file found.")
+              exit(0)
+
+          s = json.loads(summary_path.read_text())
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
+
+          query    = os.environ.get("SCAN_QUERY", "software engineer")
+          location = os.environ.get("SCAN_LOCATION", "remote")
+
+          lines = [
+              "## Scan Results",
+              "",
+              f"**Query:** `{query}` | **Location:** `{location}`",
+              "",
+              "| Metric | Value |",
+              "|--------|-------|",
+              f"| Sources queried | {s.get('sources_queried', 0)} |",
+              f"| Jobs fetched    | {s.get('total_fetched', 0)} |",
+              f"| High-risk (≥0.6) | {s.get('total_high_risk', 0)} |",
+              f"| Errors          | {s.get('error_count', 0)} |",
+          ]
+
+          detail_path = sorted(Path("scan-results").glob("scan_*.json"))
+          if detail_path:
+              try:
+                  detail = json.loads(detail_path[-1].read_text())
+                  lines += ["", "### Per-source breakdown", "", "| Source | Fetched | High-risk |", "|--------|---------|-----------|"]
+                  for src in detail.get("sources", []):
+                      lines.append(f"| {src['name']} | {src['jobs_fetched']} | {src['high_risk']} |")
+              except Exception:
+                  pass
+
+          with open(step_summary, "a") as fh:
+              fh.write("\n".join(lines) + "\n")
+          EOF
+
+      - name: Upload scan results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-results-${{ github.run_number }}
+          path: scan-results/
+          retention-days: 30
