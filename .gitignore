@@ -18,17 +18,18 @@ venv/
 htmlcov/
 mutants/
 
-# Internal tooling — never commit to public repo
+# Private
 CLAUDE.md
 .claude/
 sentinel/ecosystem.py
-sentinel/engram_publisher.py
-sentinel/fathom_bridge.py
+sentinel/*bridge*.py
+sentinel/*publisher*.py
 sentinel/_research_plugin.py
-tests/test_engram_publisher.py
-tests/test_fathom_bridge.py
+tests/test_*bridge*.py
+tests/test_*publisher*.py
 docs/codex-tasks/
-docs/FATHOM_RESEARCH_PROMPTS.md
+docs/*PROMPTS*.md
+docs/*RESEARCH*.md
 docs/PRIORITIES.md
 docs/INNOVATION_ROADMAP.md
-docs/FRAUD_HANDBOOK_DEEP_RESEARCH.md
+docs/NEXT_WAVE*.md
