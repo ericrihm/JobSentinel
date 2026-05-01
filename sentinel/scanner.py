@@ -9,6 +9,13 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
+# Optional web dependency — imported at module scope so it can be patched in
+# tests.  The scrape functions check for None / raise a helpful ImportError.
+try:
+    import httpx
+except ImportError:  # pragma: no cover
+    httpx = None  # type: ignore[assignment]
+
 from sentinel.models import JobPosting
 
 # ---------------------------------------------------------------------------
@@ -776,6 +783,91 @@ def parse_job_json(data: dict) -> JobPosting:
     job.source = str(source)
 
     return job
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn search scraper
+# ---------------------------------------------------------------------------
+
+def build_search_url(query: str, location: str = "") -> str:
+    """Build a LinkedIn job search URL from a query and optional location."""
+    import urllib.parse
+
+    params: dict[str, str] = {"keywords": query}
+    if location:
+        params["location"] = location
+    return "https://www.linkedin.com/jobs/search/?" + urllib.parse.urlencode(params)
+
+
+# Regex patterns for extracting job cards from LinkedIn search HTML
+_SEARCH_JOB_URL_RE = re.compile(
+    r'href="(https://www\.linkedin\.com/jobs/view/[^"?]+)',
+    re.IGNORECASE,
+)
+
+# Title: inside <h3> or <a> within a job card
+_SEARCH_TITLE_RE = re.compile(
+    r'<(?:h3|a)[^>]*class="[^"]*(?:base-search-card__title|job-card-list__title|'
+    r'job-search-card__title|result-card__title)[^"]*"[^>]*>(.*?)</(?:h3|a)>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+# Company: subtitle span/div/a inside a job card
+_SEARCH_COMPANY_RE = re.compile(
+    r'<(?:a|h4|span)[^>]*class="[^"]*(?:base-search-card__subtitle|'
+    r'job-card-container__company-name|job-search-card__company-name|'
+    r'result-card__subtitle|hidden-nested-link)[^"]*"[^>]*>(.*?)</(?:a|h4|span)>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def scrape_search_results(
+    query: str,
+    location: str = "",
+    limit: int = 10,
+) -> "list[JobPosting]":
+    """Best-effort LinkedIn job search scraping.
+
+    Fetches the public LinkedIn search results page and extracts job cards via
+    regex. Returns an empty list on any network or parse failure — callers
+    should handle the empty case gracefully.
+
+    Requires ``httpx`` (optional dependency). Raises ``ImportError`` if missing.
+    """
+    if httpx is None:
+        raise ImportError(
+            "httpx is required for the scan command: pip install sentinel[web]"
+        )
+
+    url = build_search_url(query, location)
+    try:
+        with httpx.Client(follow_redirects=True, timeout=15) as client:
+            resp = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            return []
+        html = resp.text
+    except Exception:
+        return []
+
+    # Extract parallel lists of URLs, titles, and companies from search HTML
+    job_urls = list(dict.fromkeys(m.group(1) for m in _SEARCH_JOB_URL_RE.finditer(html)))
+    titles = [_strip_html(m.group(1)) for m in _SEARCH_TITLE_RE.finditer(html)]
+    companies = [_strip_html(m.group(1)) for m in _SEARCH_COMPANY_RE.finditer(html)]
+
+    jobs: list[JobPosting] = []
+    for i, job_url in enumerate(job_urls[:limit]):
+        title = titles[i] if i < len(titles) else ""
+        company = companies[i] if i < len(companies) else ""
+        jobs.append(
+            JobPosting(
+                url=job_url,
+                title=title,
+                company=company,
+                source="linkedin",
+            )
+        )
+
+    return jobs
 
 
 # ---------------------------------------------------------------------------

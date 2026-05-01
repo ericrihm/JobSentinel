@@ -58,6 +58,8 @@ def _output(ctx: click.Context, data: Any, text: str) -> None:
 @click.pass_context
 def main(ctx: click.Context, use_json: bool) -> None:
     """Sentinel — LinkedIn job scam detection and validation platform."""
+    from sentinel.config import setup_logging
+    setup_logging()
     ctx.ensure_object(dict)
     ctx.obj["json"] = use_json
 
@@ -736,6 +738,107 @@ def innovate(ctx, strategies):
         for s in rankings[:5]:
             bar = "#" * int(s["mean"] * 20)
             click.echo(f"  {s['mean']:.2f} [{bar:20s}] {s['name']} ({s['attempts']} runs)")
+
+
+# ---------------------------------------------------------------------------
+# scan
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--query", "-q", required=True, help="Job search keywords.")
+@click.option("--location", "-l", default="", help="Location filter (city, country, or 'remote').")
+@click.option("--limit", default=10, show_default=True, help="Max results to fetch and analyze.")
+@click.option("--no-ai", is_flag=True, default=False, help="Disable AI escalation (faster).")
+@click.pass_context
+def scan(ctx: click.Context, query: str, location: str, limit: int, no_ai: bool) -> None:
+    """Scan LinkedIn search results and rank by scam score.
+
+    Fetches public LinkedIn search results for the given query, analyzes each
+    job posting for scam signals, and prints a table ranked by scam score
+    (highest risk first).
+    """
+    from sentinel.scanner import scrape_search_results
+    from sentinel.analyzer import analyze_job
+
+    use_ai = not no_ai
+
+    if not ctx.obj.get("json"):
+        click.echo(click.style(
+            f"  Scanning LinkedIn for: {query!r}"
+            + (f" in {location!r}" if location else ""),
+            fg="cyan",
+        ))
+
+    try:
+        jobs = scrape_search_results(query, location=location, limit=limit)
+    except ImportError as exc:
+        click.echo(click.style(f"  Error: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if not jobs:
+        msg = "No results found (LinkedIn may have blocked the request or returned no jobs)."
+        if ctx.obj.get("json"):
+            click.echo(json.dumps({"query": query, "location": location, "results": [], "message": msg}))
+        else:
+            click.echo(click.style(f"  {msg}", fg="yellow"))
+        return
+
+    # Analyze each job
+    results = []
+    for job in jobs:
+        try:
+            result = analyze_job(job, use_ai=use_ai)
+        except Exception:
+            continue
+        results.append(result)
+
+    # Sort by scam score descending (highest risk first)
+    results.sort(key=lambda r: r.scam_score, reverse=True)
+
+    if ctx.obj.get("json"):
+        click.echo(json.dumps(
+            {
+                "query": query,
+                "location": location,
+                "total": len(results),
+                "results": [r.to_dict() for r in results],
+            },
+            indent=2,
+        ))
+        return
+
+    # --- Formatted table ---
+    click.echo("")
+    click.echo(click.style(
+        f"  Scan Results: {len(results)} jobs for {query!r}"
+        + (f" in {location!r}" if location else ""),
+        bold=True,
+    ))
+    click.echo("  " + "═" * 70)
+
+    _COL_SCORE = 6
+    _COL_RISK = 14
+    _COL_TITLE = 28
+    _COL_COMPANY = 22
+
+    header = (
+        f"  {'Score':<{_COL_SCORE}}  {'Risk':<{_COL_RISK}}  "
+        f"{'Title':<{_COL_TITLE}}  {'Company':<{_COL_COMPANY}}"
+    )
+    click.echo(click.style(header, bold=True))
+    click.echo("  " + "─" * 70)
+
+    for r in results:
+        score_str = f"{r.scam_score:.2f}"
+        risk_badge = _style_risk(r.risk_level.value)
+        title_str = (r.job.title or "(no title)")[:_COL_TITLE]
+        company_str = (r.job.company or "(unknown)")[:_COL_COMPANY]
+        click.echo(
+            f"  {score_str:<{_COL_SCORE}}  {risk_badge:<{_COL_RISK}}  "
+            f"{title_str:<{_COL_TITLE}}  {company_str:<{_COL_COMPANY}}"
+        )
+
+    click.echo("")
 
 
 @main.command()

@@ -1,9 +1,12 @@
 """Company validation — cross-reference companies against external sources."""
 
+import logging
 import re
 import socket
 import subprocess
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 # Safe domain pattern: standard hostname labels, no shell metacharacters.
 _SAFE_DOMAIN_RE = re.compile(
@@ -144,7 +147,7 @@ def validate_company(company_name: str, domain: str = "", refresh: bool = False)
             if cached and _is_cache_fresh(cached.get("last_checked", "")):
                 return _cached_to_profile(cached)
         except Exception:
-            pass
+            logger.debug("Cache lookup failed for company %r", company_name, exc_info=True)
 
     # --- Fresh validation ---
     name_lower = company_name.strip().lower()
@@ -159,7 +162,7 @@ def validate_company(company_name: str, domain: str = "", refresh: bool = False)
             age = check_domain_age(domain)
             profile.whois_age_days = age
         except Exception:
-            pass
+            logger.debug("Domain age check failed for %r", domain, exc_info=True)
 
     if _HTTPX_AVAILABLE:
         try:
@@ -173,7 +176,7 @@ def validate_company(company_name: str, domain: str = "", refresh: bool = False)
                 if profile.has_linkedin_page and not profile.is_verified:
                     profile.verification_source = "linkedin"
         except Exception:
-            pass
+            logger.debug("LinkedIn check failed for %r", company_name, exc_info=True)
 
     # --- Persist to cache (best-effort) ---
     try:
@@ -191,7 +194,7 @@ def validate_company(company_name: str, domain: str = "", refresh: bool = False)
         })
         db.close()
     except Exception:
-        pass
+        logger.warning("Failed to persist company profile for %r", company_name, exc_info=True)
 
     return profile
 
@@ -309,6 +312,7 @@ def check_company_linkedin(company_name: str) -> dict:
         return {}
 
     except Exception:
+        logger.debug("LinkedIn HTTP request failed for %r", company_name, exc_info=True)
         return {}
 
 

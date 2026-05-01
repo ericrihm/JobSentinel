@@ -44,3 +44,13 @@ def get_config() -> SentinelConfig:
     if _config is None:
         _config = load_config()
     return _config
+
+
+def setup_logging(level: str = "") -> None:
+    import logging
+    lvl = level or get_config().log_level
+    logging.basicConfig(
+        level=getattr(logging, lvl.upper(), logging.INFO),
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
