@@ -292,9 +292,19 @@ function detectGrammarIssues(text) {
 }
 
 function runDemo(text) {
+  // Use the full 54-signal engine if loaded via analyze-bridge.js
+  if (window.sentinelAnalyze) {
+    const result = window.sentinelAnalyze(text);
+    const triggered = result.signals.map(s => ({
+      id: s.id, label: s.label, category: s.category,
+      weight: s.weight, matched: s.evidence || s.detail,
+    }));
+    return { scamScore: result.scamScore, triggered };
+  }
+
+  // Fallback: simple keyword matching
   const lower = text.toLowerCase();
   const triggered = [];
-
   SIGNALS.forEach(signal => {
     if (signal.id === 'grammar_issues') {
       if (detectGrammarIssues(text)) {
@@ -307,12 +317,9 @@ function runDemo(text) {
       triggered.push({ ...signal, matched: `"${hit}"` });
     }
   });
-
-  // Compute raw score (0-100)
   let rawScore = 0;
   triggered.forEach(s => { rawScore += s.weight; });
   const scamScore = Math.max(0, Math.min(100, rawScore));
-
   return { scamScore, triggered };
 }
 
