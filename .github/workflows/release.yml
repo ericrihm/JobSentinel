@@ -1,0 +1,284 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]*"
+
+permissions:
+  contents: write
+  id-token: write   # required for PyPI trusted publishing
+
+jobs:
+  # -----------------------------------------------------------------------
+  # 1. Validate that the tag version matches pyproject.toml
+  # -----------------------------------------------------------------------
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TOML_VERSION=$(python - <<'EOF'
+          import re, pathlib
+          text = pathlib.Path("pyproject.toml").read_text()
+          m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+          print(m.group(1) if m else "")
+          EOF
+          )
+          echo "Tag version  : $TAG_VERSION"
+          echo "pyproject.toml: $TOML_VERSION"
+          if [ "$TAG_VERSION" != "$TOML_VERSION" ]; then
+            echo "ERROR: tag version ($TAG_VERSION) does not match pyproject.toml version ($TOML_VERSION)."
+            echo "Please update pyproject.toml before tagging."
+            exit 1
+          fi
+
+  # -----------------------------------------------------------------------
+  # 2. Run the full test suite before releasing
+  # -----------------------------------------------------------------------
+  test:
+    name: Test suite
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-3.12-release-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-${{ runner.os }}-3.12-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: |
+          ruff check sentinel/ tests/
+          ruff format --check sentinel/ tests/
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
+  # -----------------------------------------------------------------------
+  # 3. Build the Python package
+  # -----------------------------------------------------------------------
+  build:
+    name: Build distribution
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build twine
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Verify distribution
+        run: twine check dist/*
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  # -----------------------------------------------------------------------
+  # 4. Publish to PyPI (requires trusted publisher configuration)
+  # -----------------------------------------------------------------------
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi   # Configure this environment in repo Settings → Environments
+    if: "!contains(github.ref_name, '-dev') && !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-rc')"
+
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Uses OIDC trusted publishing — no API token needed when the
+        # "pypi" environment is configured in repo Settings.
+        # See: https://docs.pypi.org/trusted-publishers/
+
+  # -----------------------------------------------------------------------
+  # 5. Generate changelog and create GitHub release
+  # -----------------------------------------------------------------------
+  github-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (full history for changelog)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Generate changelog from git log
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+
+          # Find the previous tag (if any)
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${VERSION}$" | head -1)
+
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..${VERSION}"
+            echo "Generating changelog from $PREV_TAG to $VERSION"
+          else
+            RANGE="${VERSION}"
+            echo "First release — including all commits"
+          fi
+
+          python - "$RANGE" "$VERSION" "$PREV_TAG" <<'PYEOF'
+          import subprocess, sys, re
+          from pathlib import Path
+
+          range_arg = sys.argv[1]
+          version   = sys.argv[2]
+          prev_tag  = sys.argv[3] if len(sys.argv) > 3 else ""
+
+          result = subprocess.run(
+              ["git", "log", range_arg, "--pretty=format:%h %s", "--no-merges"],
+              capture_output=True, text=True
+          )
+          commits = result.stdout.strip().split("\n") if result.stdout.strip() else []
+
+          # Categorise by conventional commit prefix
+          categories = {
+              "feat":     ("Features", []),
+              "fix":      ("Bug Fixes", []),
+              "perf":     ("Performance", []),
+              "test":     ("Tests", []),
+              "docs":     ("Documentation", []),
+              "refactor": ("Refactoring", []),
+              "chore":    ("Chores", []),
+              "other":    ("Other", []),
+          }
+
+          for commit in commits:
+              if not commit.strip():
+                  continue
+              sha, _, msg = commit.partition(" ")
+              m = re.match(r'^(\w+)(?:\(.+?\))?!?:\s*(.+)', msg)
+              cat = m.group(1) if m else "other"
+              body = m.group(2) if m else msg
+              if cat not in categories:
+                  cat = "other"
+              categories[cat][1].append(f"- {body} ({sha})")
+
+          lines = [f"## {version}\n"]
+          for _key, (label, entries) in categories.items():
+              if entries:
+                  lines.append(f"### {label}\n")
+                  lines.extend(entries)
+                  lines.append("")
+
+          if prev_tag:
+              repo = subprocess.run(
+                  ["git", "remote", "get-url", "origin"], capture_output=True, text=True
+              ).stdout.strip().rstrip(".git")
+              if "github.com" in repo:
+                  lines.append(f"\n**Full changelog:** {repo}/compare/{prev_tag}...{version}")
+
+          changelog = "\n".join(lines)
+          Path("CHANGELOG_RELEASE.md").write_text(changelog)
+          print(changelog)
+          PYEOF
+
+      - name: Create GitHub release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const version = context.ref.replace('refs/tags/', '');
+            const changelog = fs.existsSync('CHANGELOG_RELEASE.md')
+              ? fs.readFileSync('CHANGELOG_RELEASE.md', 'utf8')
+              : `Release ${version}`;
+
+            const prerelease = /-(dev|alpha|beta|rc)/.test(version);
+
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: version,
+              name: `JobSentinel ${version}`,
+              body: changelog,
+              draft: false,
+              prerelease: prerelease,
+            });
+
+            console.log(`Created release: ${release.data.html_url}`);
+
+            // Upload distribution files as release assets
+            const distFiles = fs.readdirSync('dist/');
+            for (const file of distFiles) {
+              const data = fs.readFileSync(`dist/${file}`);
+              const contentType = file.endsWith('.whl')
+                ? 'application/zip'
+                : 'application/gzip';
+
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                name: file,
+                data: data,
+                headers: { 'content-type': contentType },
+              });
+              console.log(`Uploaded: ${file}`);
+            }
+
+      - name: Write release summary
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Release ${VERSION} Published
+
+          | Asset | Details |
+          |-------|---------|
+          | Version | ${VERSION} |
+          | Tag | \`${GITHUB_REF_NAME}\` |
+          | Commit | \`${GITHUB_SHA:0:8}\` |
+
+          ### Distribution Files
+          $(ls dist/ | sed 's/^/- /')
+          EOF

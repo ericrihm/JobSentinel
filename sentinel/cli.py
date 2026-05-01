@@ -3190,3 +3190,12 @@ def checkpoint(ctx: click.Context, action: str, tag: str | None) -> None:
         else:
             click.echo(click.style(f"  Error: {exc}", fg="red"), err=True)
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Cloud commands (cloud-scan, cloud-evolve, cloud-status)
+# ---------------------------------------------------------------------------
+
+from sentinel.cloud import register_cloud_commands  # noqa: E402
+
+register_cloud_commands(main)
