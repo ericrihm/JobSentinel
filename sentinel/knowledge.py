@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sentinel.db import SentinelDB
-from sentinel.models import ScamPattern, SignalCategory, UserReport
+from sentinel.models import ScamPattern, SignalCategory
 
 logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "Reshipping / Package Forwarding Scam",
         "description": "Job requires receiving packages at home and re-shipping them — a money mule scheme.",
         "category": "red_flag",
-        "regex": r"(?i)(reship|re-ship|package\s+forward|receive\s+(packages?|shipments?)\s+at\s+home|shipping\s+manager\s+from\s+home)",
+        "regex": r"(?i)(reship|re-ship|package\s+forward|receive\s+(packages?|shipments?)\s+at\s+home|shipping\s+manager\s+from\s+home)",  # noqa: E501
         "keywords": ["reship", "receive packages at home", "forward packages", "shipping agent from home"],
     },
     {
@@ -50,8 +50,8 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "MLM / Network Marketing Recruitment",
         "description": "Job is actually recruitment for a multi-level marketing scheme disguised as employment.",
         "category": "red_flag",
-        "regex": r"(?i)(network\s+marketing|multi.?level|unlimited\s+earning\s+potential|build\s+your\s+(own\s+)?team|recruit\s+(others|friends)|downline)",
-        "keywords": ["network marketing", "multi-level", "unlimited earning potential", "build your team", "downline", "recruit others"],
+        "regex": r"(?i)(network\s+marketing|multi.?level|unlimited\s+earning\s+potential|build\s+your\s+(own\s+)?team|recruit\s+(others|friends)|downline)",  # noqa: E501
+        "keywords": ["network marketing", "multi-level", "unlimited earning potential", "build your team", "downline", "recruit others"],  # noqa: E501
     },
     {
         "pattern_id": "mystery_shopper",
@@ -66,7 +66,7 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "Envelope Stuffing / Craft Assembly",
         "description": "Classic work-from-home scam: stuff envelopes or assemble items for pay.",
         "category": "red_flag",
-        "regex": r"(?i)(stuff(ing)?\s+envelopes|envelope\s+stuffing|assemble\s+(crafts|products|items)\s+at\s+home|craft\s+assembly)",
+        "regex": r"(?i)(stuff(ing)?\s+envelopes|envelope\s+stuffing|assemble\s+(crafts|products|items)\s+at\s+home|craft\s+assembly)",  # noqa: E501
         "keywords": ["stuff envelopes", "envelope stuffing", "assemble at home", "craft assembly from home"],
     },
     {
@@ -74,7 +74,7 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "Product Assembly at Home",
         "description": "Pay-to-play scheme where workers buy a kit upfront and are never paid for finished goods.",
         "category": "red_flag",
-        "regex": r"(?i)(assemble\s+(products?|items?|crafts?|jewelry|toys?)\s+at\s+home|home\s+assembly\s+work|work\s+from\s+home.{0,60}assembly)",
+        "regex": r"(?i)(assemble\s+(products?|items?|crafts?|jewelry|toys?)\s+at\s+home|home\s+assembly\s+work|work\s+from\s+home.{0,60}assembly)",  # noqa: E501
         "keywords": ["assemble products at home", "home assembly work", "assembly kit", "buy starter kit"],
     },
     {
@@ -82,39 +82,39 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "Pyramid / Ponzi Scheme",
         "description": "Returns depend primarily on recruitment rather than product/service sales.",
         "category": "red_flag",
-        "regex": r"(?i)(pyramid|ponzi|earn\s+by\s+recruit|get\s+paid\s+to\s+recruit|investment\s+opportunity.{0,60}guaranteed\s+return)",
+        "regex": r"(?i)(pyramid|ponzi|earn\s+by\s+recruit|get\s+paid\s+to\s+recruit|investment\s+opportunity.{0,60}guaranteed\s+return)",  # noqa: E501
         "keywords": ["pyramid", "earn by recruiting", "get paid to recruit", "investment opportunity guaranteed"],
     },
     {
         "pattern_id": "upfront_payment_required",
         "name": "Upfront Payment / Training Fee",
-        "description": "Legitimate employers never ask candidates to pay for training, materials, or background checks.",
+        "description": "Legitimate employers never ask candidates to pay for training, materials, or background checks.",  # noqa: E501
         "category": "red_flag",
-        "regex": r"(?i)(pay\s+(for|a)\s+(training|background\s+check|starter\s+kit|materials|certification|access\s+fee)|registration\s+fee\s+required|refundable\s+deposit)",
-        "keywords": ["pay for training", "starter kit fee", "registration fee", "background check fee", "refundable deposit"],
+        "regex": r"(?i)(pay\s+(for|a)\s+(training|background\s+check|starter\s+kit|materials|certification|access\s+fee)|registration\s+fee\s+required|refundable\s+deposit)",  # noqa: E501
+        "keywords": ["pay for training", "starter kit fee", "registration fee", "background check fee", "refundable deposit"],  # noqa: E501
     },
     {
         "pattern_id": "personal_info_upfront",
         "name": "SSN / Bank Info Before Interview",
         "description": "Requests for SSN, bank account, or passport number before any formal interview.",
         "category": "red_flag",
-        "regex": r"(?i)(social\s+security\s+number|SSN|bank\s+account\s+(number|details)|passport\s+number|direct\s+deposit\s+info).{0,120}(apply|application|before\s+interview|to\s+get\s+started)",
-        "keywords": ["provide SSN", "bank account number to apply", "passport copy to apply", "direct deposit to start"],
+        "regex": r"(?i)(social\s+security\s+number|SSN|bank\s+account\s+(number|details)|passport\s+number|direct\s+deposit\s+info).{0,120}(apply|application|before\s+interview|to\s+get\s+started)",  # noqa: E501
+        "keywords": ["provide SSN", "bank account number to apply", "passport copy to apply", "direct deposit to start"],  # noqa: E501
     },
     {
         "pattern_id": "guaranteed_income",
         "name": "Guaranteed Income Claims",
         "description": "Promises of specific guaranteed earnings, especially unrealistically high ones.",
         "category": "red_flag",
-        "regex": r"(?i)(guarantee[sd]?\s+(\$[\d,]+|\d+k?)\s*(per\s+(week|month|day|hour))?|earn\s+up\s+to\s+\$[\d,]+\s+guaranteed|you\s+will\s+earn)",
+        "regex": r"(?i)(guarantee[sd]?\s+(\$[\d,]+|\d+k?)\s*(per\s+(week|month|day|hour))?|earn\s+up\s+to\s+\$[\d,]+\s+guaranteed|you\s+will\s+earn)",  # noqa: E501
         "keywords": ["guaranteed income", "earn guaranteed", "you will make", "earn up to guaranteed"],
     },
     {
         "pattern_id": "crypto_payment",
         "name": "Cryptocurrency / Wire Transfer Payment",
-        "description": "Compensation or job duties involve cryptocurrency or wire transfers — classic money mule pattern.",
+        "description": "Compensation or job duties involve cryptocurrency or wire transfers — classic money mule pattern.",  # noqa: E501
         "category": "red_flag",
-        "regex": r"(?i)(paid\s+in\s+(bitcoin|crypto|ethereum|usdt)|cryptocurrency\s+(payment|wallet)|wire\s+transfer.{0,60}job|send\s+crypto|bitcoin\s+wallet)",
+        "regex": r"(?i)(paid\s+in\s+(bitcoin|crypto|ethereum|usdt)|cryptocurrency\s+(payment|wallet)|wire\s+transfer.{0,60}job|send\s+crypto|bitcoin\s+wallet)",  # noqa: E501
         "keywords": ["paid in bitcoin", "crypto wallet", "wire transfer job", "send cryptocurrency"],
     },
     {
@@ -122,7 +122,7 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "Suspicious Email Domain",
         "description": "Corporate recruiter using a personal email (gmail/yahoo/hotmail) for official hiring.",
         "category": "red_flag",
-        "regex": r"(?i)contact.{0,40}(@gmail\.com|@yahoo\.com|@hotmail\.com|@outlook\.com|@aol\.com).{0,60}(apply|questions|hiring)",
+        "regex": r"(?i)contact.{0,40}(@gmail\.com|@yahoo\.com|@hotmail\.com|@outlook\.com|@aol\.com).{0,60}(apply|questions|hiring)",  # noqa: E501
         "keywords": ["gmail recruiter", "yahoo hr", "contact us at gmail", "apply via personal email"],
     },
     {
@@ -130,8 +130,8 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "Urgency / Pressure Tactics",
         "description": "Artificial urgency designed to prevent applicants from doing due diligence.",
         "category": "warning",
-        "regex": r"(?i)(apply\s+(now|immediately|today|asap)|limited\s+(spots?|positions?|openings?)|hiring\s+(now|immediately|urgently|asap)|offer\s+expires|must\s+respond\s+within)",
-        "keywords": ["apply now", "limited spots", "hiring immediately", "offer expires", "must respond within 24 hours"],
+        "regex": r"(?i)(apply\s+(now|immediately|today|asap)|limited\s+(spots?|positions?|openings?)|hiring\s+(now|immediately|urgently|asap)|offer\s+expires|must\s+respond\s+within)",  # noqa: E501
+        "keywords": ["apply now", "limited spots", "hiring immediately", "offer expires", "must respond within 24 hours"],  # noqa: E501
     },
     {
         "pattern_id": "vague_description",
@@ -139,7 +139,7 @@ _DEFAULT_PATTERNS: list[dict] = [
         "description": "Description lacks any concrete responsibilities, tools, or qualifications.",
         "category": "warning",
         "regex": r"",
-        "keywords": ["various tasks", "general duties", "assist with projects", "flexible responsibilities", "other duties as assigned"],
+        "keywords": ["various tasks", "general duties", "assist with projects", "flexible responsibilities", "other duties as assigned"],  # noqa: E501
     },
     {
         "pattern_id": "unrealistic_salary",
@@ -162,7 +162,7 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "No Skills or Qualifications Listed",
         "description": "Legitimate jobs list specific requirements. No requirements signals a scam or ghost posting.",
         "category": "warning",
-        "regex": r"(?i)(no\s+(experience|qualifications?|skills?|degree|education)\s+(required|needed|necessary)|anyone\s+can\s+(apply|do\s+this|qualify))",
+        "regex": r"(?i)(no\s+(experience|qualifications?|skills?|degree|education)\s+(required|needed|necessary)|anyone\s+can\s+(apply|do\s+this|qualify))",  # noqa: E501
         "keywords": ["no experience required", "no qualifications needed", "anyone can apply", "no skills necessary"],
     },
     {
@@ -178,7 +178,7 @@ _DEFAULT_PATTERNS: list[dict] = [
         "name": "Job Offer Without Interview",
         "description": "Instant job offers with no interview are a strong scam signal.",
         "category": "red_flag",
-        "regex": r"(?i)(hired\s+immediately|no\s+interview\s+(required|needed)|instant(ly)?\s+(hired|approved)|you('re|re|are)\s+(already\s+)?hired)",
+        "regex": r"(?i)(hired\s+immediately|no\s+interview\s+(required|needed)|instant(ly)?\s+(hired|approved)|you('re|re|are)\s+(already\s+)?hired)",  # noqa: E501
         "keywords": ["hired immediately", "no interview required", "instantly hired", "you're already hired"],
     },
 ]
@@ -267,11 +267,7 @@ class KnowledgeBase:
         our_prediction: float = 0.0,
     ) -> None:
         """Record a user-submitted verdict for a job URL."""
-        was_correct: bool
-        if is_scam:
-            was_correct = our_prediction >= 0.5
-        else:
-            was_correct = our_prediction < 0.5
+        was_correct = our_prediction >= 0.5 if is_scam else our_prediction < 0.5
 
         verdict = "scam" if is_scam else "legitimate"
         logger.info("Report submitted: url=%s verdict=%s was_correct=%s", url, verdict, was_correct)
@@ -349,8 +345,14 @@ class KnowledgeBase:
         scam_reports = sum(1 for r in reports if r.get("is_scam") == 1)
         legitimate_reports = total - scam_reports
 
-        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
-        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+        precision = (
+            true_positives / (true_positives + false_positives)
+            if (true_positives + false_positives) > 0 else 0.0
+        )
+        recall = (
+            true_positives / (true_positives + false_negatives)
+            if (true_positives + false_negatives) > 0 else 0.0
+        )
 
         return {
             "total_reports": total,

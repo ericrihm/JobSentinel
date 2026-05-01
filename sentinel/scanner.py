@@ -4,10 +4,10 @@ Parses job postings from raw text, HTML, JSON dicts, or batch files.
 No runtime dependencies beyond Python stdlib.
 """
 
+import contextlib
 import json
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 # Optional web dependency — imported at module scope so it can be patched in
 # tests.  The scrape functions check for None / raise a helpful ImportError.
@@ -33,7 +33,7 @@ _RELATIVE_PATTERNS = [
 ]
 
 
-def _parse_relative_date(text: str) -> Optional[int]:
+def _parse_relative_date(text: str) -> int | None:
     """Parse a relative date string into days since posted.
 
     Returns the number of days as an int, or None if the text is not
@@ -46,7 +46,7 @@ def _parse_relative_date(text: str) -> Optional[int]:
     return None
 
 
-def _days_since_posted(date_str: str) -> Optional[int]:
+def _days_since_posted(date_str: str) -> int | None:
     """Return the number of days since a posting date string.
 
     Handles:
@@ -75,8 +75,8 @@ def _days_since_posted(date_str: str) -> Optional[int]:
             parsed = datetime.fromisoformat(fmt_text)
             # Make timezone-aware for comparison
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc)
+                parsed = parsed.replace(tzinfo=UTC)
+            now = datetime.now(UTC)
             delta = now - parsed
             return max(0, delta.days)
         except ValueError:
@@ -118,7 +118,7 @@ _CURRENCY_SYMBOLS = {"$": "USD", "£": "GBP", "€": "EUR"}
 _CURRENCY_CODES = {"USD", "CAD", "GBP", "EUR", "AUD"}
 
 
-def _clean_num(digits: str, k_suffix: Optional[str]) -> float:
+def _clean_num(digits: str, k_suffix: str | None) -> float:
     val = float(digits.replace(",", ""))
     if k_suffix and k_suffix.lower() == "k":
         val *= 1000
@@ -420,15 +420,10 @@ def parse_job_text(
     applicant_count = 0
     m = _APPLICANTS_RE.search(text)
     if m:
-        try:
+        with contextlib.suppress(ValueError):
             applicant_count = int(m.group(1).replace(",", ""))
-        except ValueError:
-            pass
 
-    recruiter_name = ""
     m = _RECRUITER_RE.search(text)
-    if m:
-        recruiter_name = m.group(1).strip()
 
     return JobPosting(
         url=url,
@@ -475,7 +470,7 @@ _LI_DESCRIPTION_RE = re.compile(
 )
 
 
-def _extract_json_ld(html: str) -> Optional[dict]:
+def _extract_json_ld(html: str) -> dict | None:
     """Return the first JobPosting JSON-LD block found in HTML, or None."""
     for m in _JSON_LD_RE.finditer(html):
         try:
@@ -539,15 +534,11 @@ def parse_job_html(html: str, url: str = "") -> JobPosting:
                 lo = value.get("minValue") or value.get("value")
                 hi = value.get("maxValue") or value.get("value")
                 if lo is not None:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         job.salary_min = float(lo)
-                    except (ValueError, TypeError):
-                        pass
                 if hi is not None:
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         job.salary_max = float(hi)
-                    except (ValueError, TypeError):
-                        pass
             cur = base_salary.get("currency", "")
             if cur:
                 job.salary_currency = str(cur).upper()
@@ -685,7 +676,7 @@ def _pick(data: dict, aliases: list[str], default=None):
     return default
 
 
-def _coerce_bool(val) -> Optional[bool]:
+def _coerce_bool(val) -> bool | None:
     if isinstance(val, bool):
         return val
     if isinstance(val, int):
@@ -712,17 +703,13 @@ def parse_job_json(data: dict) -> JobPosting:
 
     sal_min = _pick(data, _FIELD_ALIASES["salary_min"])
     if sal_min is not None:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             job.salary_min = float(sal_min)
-        except (ValueError, TypeError):
-            pass
 
     sal_max = _pick(data, _FIELD_ALIASES["salary_max"])
     if sal_max is not None:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             job.salary_max = float(sal_max)
-        except (ValueError, TypeError):
-            pass
 
     currency = _pick(data, _FIELD_ALIASES["salary_currency"])
     if currency:
@@ -743,10 +730,8 @@ def parse_job_json(data: dict) -> JobPosting:
 
     applicants = _pick(data, _FIELD_ALIASES["applicant_count"])
     if applicants is not None:
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             job.applicant_count = int(applicants)
-        except (ValueError, TypeError):
-            pass
 
     exp = _pick(data, _FIELD_ALIASES["experience_level"])
     if exp:

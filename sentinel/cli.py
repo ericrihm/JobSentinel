@@ -8,9 +8,6 @@ from typing import Any
 
 import click
 
-from sentinel.models import RiskLevel
-
-
 # ---------------------------------------------------------------------------
 # Risk-level styling helpers
 # ---------------------------------------------------------------------------
@@ -77,22 +74,25 @@ def main(ctx: click.Context, use_json: bool) -> None:
 @click.option("--file", "input_file", type=click.Path(exists=True), default=None,
               help="Batch analyze from JSON file")
 @click.pass_context
-def analyze(ctx: click.Context, input_text: str | None, title: str, company: str, no_ai: bool, input_file: str | None) -> None:
+def analyze(  # noqa: E501
+    ctx: click.Context, input_text: str | None, title: str, company: str,
+    no_ai: bool, input_file: str | None,
+) -> None:
     """Analyze a job posting for scam signals.
 
     INPUT_TEXT can be a LinkedIn URL or raw job description text.
     Use --file to batch-analyze from a JSON file.
     """
-    from sentinel.analyzer import analyze_job, analyze_text, analyze_url, batch_analyze
-    from sentinel.scanner import parse_job_text
+    from sentinel.analyzer import analyze_text, analyze_url, batch_analyze
     from sentinel.db import SentinelDB
 
     use_ai = not no_ai
 
     # --- Batch mode ---
     if input_file is not None:
-        from sentinel.scanner import load_jobs_from_file
         import os
+
+        from sentinel.scanner import load_jobs_from_file
         try:
             jobs = load_jobs_from_file(input_file)
         except Exception as exc:
@@ -302,7 +302,11 @@ def validate(ctx: click.Context, company_name: str, domain: str, refresh: bool) 
         "is_verified": profile.is_verified,
         "verification_source": profile.verification_source,
         "has_linkedin_page": profile.has_linkedin_page,
-        "linkedin_url": profile.linkedin_url if hasattr(profile, "linkedin_url") else profile.company_linkedin_url if hasattr(profile, "company_linkedin_url") else "",
+        "linkedin_url": (
+            profile.linkedin_url if hasattr(profile, "linkedin_url")
+            else profile.company_linkedin_url if hasattr(profile, "company_linkedin_url")
+            else ""
+        ),
         "linkedin_followers": profile.linkedin_followers,
         "employee_count": profile.employee_count,
         "industry": profile.industry,
@@ -353,8 +357,8 @@ def validate(ctx: click.Context, company_name: str, domain: str, refresh: bool) 
 @click.pass_context
 def report(ctx: click.Context, url: str, reason: str, is_scam: bool) -> None:
     """Report a job posting as a scam (or mark it as legitimate)."""
-    from sentinel.knowledge import KnowledgeBase
     from sentinel.db import SentinelDB
+    from sentinel.knowledge import KnowledgeBase
 
     # Try to get our prior prediction from DB
     our_prediction = 0.0
@@ -757,8 +761,8 @@ def scan(ctx: click.Context, query: str, location: str, limit: int, no_ai: bool)
     job posting for scam signals, and prints a table ranked by scam score
     (highest risk first).
     """
-    from sentinel.scanner import scrape_search_results
     from sentinel.analyzer import analyze_job
+    from sentinel.scanner import scrape_search_results
 
     use_ai = not no_ai
 
@@ -837,6 +841,203 @@ def scan(ctx: click.Context, query: str, location: str, limit: int, no_ai: bool)
             f"  {score_str:<{_COL_SCORE}}  {risk_badge:<{_COL_RISK}}  "
             f"{title_str:<{_COL_TITLE}}  {company_str:<{_COL_COMPANY}}"
         )
+
+    click.echo("")
+
+
+# ---------------------------------------------------------------------------
+# ingest
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--query", "-q", multiple=True, required=True, help="Search query (can specify multiple)")
+@click.option("--location", "-l", default="", help="Job location filter")
+@click.option("--sources", "-s", default="all", help="Comma-separated source names or 'all'")
+@click.option("--limit", default=25, help="Max jobs per source")
+@click.option("--no-ai", is_flag=True, help="Disable AI escalation")
+@click.option("--throttle", default=1.0, help="Seconds between source fetches")
+@click.pass_context
+def ingest(ctx, query, location, sources, limit, no_ai, throttle):
+    """Ingest jobs from external sources for flywheel training."""
+    try:
+        from sentinel.ingest import IngestionPipeline
+    except ImportError as exc:
+        if ctx.obj.get("json"):
+            click.echo(json.dumps({"error": str(exc)}, indent=2))
+        else:
+            click.echo(click.style(f"  Error: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    source_list = None if sources.strip().lower() == "all" else [
+        s.strip() for s in sources.split(",") if s.strip()
+    ]
+
+    pipeline = IngestionPipeline()
+
+    all_runs = []
+    for q in query:
+        if not ctx.obj.get("json"):
+            click.echo(click.style(
+                f"  Ingesting: {q!r}" + (f" in {location!r}" if location else ""),
+                fg="cyan",
+            ))
+        try:
+            run = pipeline.run(
+                query=q,
+                location=location,
+                sources=source_list,
+                limit_per_source=limit,
+                use_ai=not no_ai,
+                throttle_seconds=throttle,
+            )
+        except Exception as exc:
+            if ctx.obj.get("json"):
+                click.echo(json.dumps({"error": str(exc)}, indent=2))
+            else:
+                click.echo(click.style(f"  Error during ingest: {exc}", fg="red"), err=True)
+            sys.exit(1)
+        all_runs.append(run)
+
+    if ctx.obj.get("json"):
+        click.echo(json.dumps([r.to_dict() for r in all_runs], indent=2, default=str))
+        return
+
+    # Print summary table
+    click.echo("")
+    click.echo(click.style("  Ingestion Summary", bold=True))
+    click.echo("  " + "─" * 60)
+    hdr = f"  {'Query':<22}  {'Sources':<18}  {'Fetched':>7}  {'New':>5}  {'High Risk':>9}"
+    click.echo(click.style(hdr, bold=True))
+    click.echo("  " + "─" * 60)
+
+    for run in all_runs:
+        q_trunc = run.query[:22]
+        sources_str = ", ".join(run.sources_queried)[:18] if run.sources_queried else "none"
+        click.echo(
+            f"  {q_trunc:<22}  {sources_str:<18}  {run.jobs_fetched:>7}  "
+            f"{run.jobs_new:>5}  {run.high_risk_count:>9}"
+        )
+
+    total_fetched = sum(r.jobs_fetched for r in all_runs)
+    total_new = sum(r.jobs_new for r in all_runs)
+    total_high = sum(r.high_risk_count for r in all_runs)
+    click.echo("  " + "─" * 60)
+    click.echo(
+        f"  {'TOTAL':<22}  {'':18}  {total_fetched:>7}  {total_new:>5}  {total_high:>9}"
+    )
+    click.echo("")
+
+
+# ---------------------------------------------------------------------------
+# ingest-history
+# ---------------------------------------------------------------------------
+
+@main.command("ingest-history")
+@click.option("--limit", default=10, help="Number of recent runs to show")
+@click.pass_context
+def ingest_history(ctx, limit):
+    """Show recent ingestion run history."""
+    from sentinel.db import SentinelDB
+    db = SentinelDB()
+    try:
+        rows = db.get_ingestion_history(limit=limit)
+    finally:
+        db.close()
+
+    if ctx.obj.get("json"):
+        click.echo(json.dumps({"runs": rows, "count": len(rows)}, indent=2, default=str))
+        return
+
+    if not rows:
+        click.echo(click.style("  No ingestion runs found.", fg="yellow"))
+        return
+
+    click.echo("")
+    click.echo(click.style(f"  Ingestion History (last {len(rows)} runs)", bold=True))
+    click.echo("  " + "─" * 70)
+    hdr = f"  {'Started':<26}  {'Query':<22}  {'Fetched':>7}  {'New':>5}  {'High Risk':>9}"
+    click.echo(click.style(hdr, bold=True))
+    click.echo("  " + "─" * 70)
+
+    for row in rows:
+        started = (row.get("started_at") or "")[:26]
+        q_trunc = (row.get("query") or "")[:22]
+        click.echo(
+            f"  {started:<26}  {q_trunc:<22}  {row.get('jobs_fetched', 0):>7}  "
+            f"{row.get('jobs_new', 0):>5}  {row.get('high_risk_count', 0):>9}"
+        )
+    click.echo("")
+
+
+# ---------------------------------------------------------------------------
+# auto
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--queries", "-q", multiple=True,
+              default=("software engineer", "data analyst", "remote work from home"),
+              help="Queries to run")
+@click.option("--location", "-l", default="", help="Location filter")
+@click.option("--flywheel/--no-flywheel", default=True, help="Run flywheel after ingestion")
+@click.option("--no-ai", is_flag=True, help="Disable AI")
+@click.pass_context
+def auto(ctx, queries, location, flywheel, no_ai):
+    """Run full automated cycle: ingest from all sources → score → learn → evolve."""
+    try:
+        from sentinel.ingest import IngestionPipeline
+    except ImportError as exc:
+        if ctx.obj.get("json"):
+            click.echo(json.dumps({"error": str(exc)}, indent=2))
+        else:
+            click.echo(click.style(f"  Error: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    if not ctx.obj.get("json"):
+        click.echo(click.style("  Running automated ingest cycle...", fg="cyan"))
+
+    pipeline = IngestionPipeline()
+
+    try:
+        runs = pipeline.auto_ingest(
+            queries=list(queries),
+            location=location,
+            run_flywheel=flywheel,
+        )
+    except Exception as exc:
+        if ctx.obj.get("json"):
+            click.echo(json.dumps({"error": str(exc)}, indent=2))
+        else:
+            click.echo(click.style(f"  Error during auto ingest: {exc}", fg="red"), err=True)
+        sys.exit(1)
+
+    total_fetched = sum(r.jobs_fetched for r in runs)
+    total_new = sum(r.jobs_new for r in runs)
+    total_high = sum(r.high_risk_count for r in runs)
+
+    if ctx.obj.get("json"):
+        click.echo(json.dumps({
+            "queries": list(queries),
+            "location": location,
+            "runs": [r.to_dict() for r in runs],
+            "total_fetched": total_fetched,
+            "total_new": total_new,
+            "total_high_risk": total_high,
+            "flywheel_ran": flywheel,
+        }, indent=2, default=str))
+        return
+
+    click.echo("")
+    click.echo(click.style("  Auto Cycle Complete", bold=True))
+    click.echo("  " + "─" * 50)
+    click.echo(f"  Queries run:         {len(runs):>8,}")
+    click.echo(f"  Total jobs fetched:  {total_fetched:>8,}")
+    click.echo(f"  New jobs added:      {total_new:>8,}")
+    high_color = "red" if total_high > 0 else "green"
+    click.echo(
+        f"  High-risk detected:  {click.style(str(total_high).rjust(8), fg=high_color)}"
+    )
+    if flywheel:
+        click.echo(click.style("  Flywheel cycle ran after ingestion.", fg="cyan"))
 
     click.echo("")
 

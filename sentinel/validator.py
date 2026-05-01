@@ -4,7 +4,9 @@ import logging
 import re
 import socket
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+from sentinel.models import CompanyProfile
 
 logger = logging.getLogger(__name__)
 
@@ -13,15 +15,13 @@ _SAFE_DOMAIN_RE = re.compile(
     r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$'
 )
 
-from sentinel.models import CompanyProfile
-
 # Cache TTL: number of days before a cached company profile is considered stale.
 CACHE_TTL_DAYS = 7
 
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO 8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _is_cache_fresh(last_checked: str) -> bool:
@@ -35,8 +35,8 @@ def _is_cache_fresh(last_checked: str) -> bool:
     try:
         ts = datetime.fromisoformat(last_checked)
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-        age_days = (datetime.now(timezone.utc) - ts).days
+            ts = ts.replace(tzinfo=UTC)
+        age_days = (datetime.now(UTC) - ts).days
         return age_days < CACHE_TTL_DAYS
     except (ValueError, TypeError):
         return False
@@ -81,7 +81,7 @@ KNOWN_COMPANIES: set[str] = {
     "shopify", "ebay", "etsy", "wayfair", "chewy", "doordash", "instacart",
     "grubhub", "uber eats", "postmates",
     # Ride & Delivery
-    "uber", "lyft", "airbnb", "doordash",
+    "uber", "lyft", "airbnb",
     # Enterprise SaaS
     "workday", "servicenow", "zendesk", "hubspot", "atlassian", "slack",
     "zoom", "dropbox", "box", "docusign", "veeva", "coupa", "freshworks",
@@ -108,7 +108,7 @@ KNOWN_COMPANIES: set[str] = {
     "walmart", "target", "costco", "kroger", "home depot", "lowes",
     "best buy", "nordstrom", "macy's",
     # Telecom
-    "at&t", "verizon", "t-mobile", "comcast", "charter",
+    "at&t", "verizon", "t-mobile", "charter",
     # Aerospace & Defense
     "lockheed martin", "raytheon", "boeing", "northrop grumman", "general dynamics",
     "spacex", "blue origin",
@@ -245,9 +245,9 @@ def check_domain_age(domain: str) -> int:
     if not creation_date:
         return 0
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     if creation_date.tzinfo is None:
-        creation_date = creation_date.replace(tzinfo=timezone.utc)
+        creation_date = creation_date.replace(tzinfo=UTC)
 
     age_days = (now - creation_date).days
     return max(0, age_days)
@@ -323,7 +323,7 @@ def _is_known_company(company_name: str) -> bool:
     name = company_name.strip().lower()
     if name in KNOWN_COMPANIES:
         return True
-    for known in KNOWN_COMPANIES:
-        if name == known or name.startswith(known + " ") or name.endswith(" " + known):
-            return True
-    return False
+    return any(
+        name == known or name.startswith(known + " ") or name.endswith(" " + known)
+        for known in KNOWN_COMPANIES
+    )

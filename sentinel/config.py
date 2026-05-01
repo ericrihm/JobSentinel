@@ -3,7 +3,6 @@
 import os
 import tomllib
 from dataclasses import dataclass, field
-from pathlib import Path
 
 _DEFAULT_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".config", "sentinel", "config.toml")
 

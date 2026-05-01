@@ -16,7 +16,7 @@ import os
 import re
 import time
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -61,23 +61,23 @@ try:
 
     class AnalyzeRequest(BaseModel):
         """Payload for POST /api/analyze.  Provide one of: text, url, or job_data."""
-        text: Optional[str] = Field(None, max_length=50000, description="Raw job description text.")
-        url: Optional[str] = Field(None, max_length=2048, description="LinkedIn job posting URL.")
-        job_data: Optional[dict] = Field(None, description="Structured job dict (JSON).")
+        text: str | None = Field(None, max_length=50000, description="Raw job description text.")
+        url: str | None = Field(None, max_length=2048, description="LinkedIn job posting URL.")
+        job_data: dict | None = Field(None, description="Structured job dict (JSON).")
         title: str = Field("", max_length=500, description="Job title (used with text input).")
         company: str = Field("", max_length=500, description="Company name (used with text input).")
         use_ai: bool = Field(True, description="Enable AI escalation for ambiguous cases.")
 
         @field_validator("url")
         @classmethod
-        def url_must_have_http_scheme(cls, v: Optional[str]) -> Optional[str]:
+        def url_must_have_http_scheme(cls, v: str | None) -> str | None:
             if v is not None and not (v.startswith("http://") or v.startswith("https://")):
                 raise ValueError("url must start with http:// or https://")
             return v
 
         @field_validator("text", "title", "company")
         @classmethod
-        def no_script_tags(cls, v: Optional[str]) -> Optional[str]:
+        def no_script_tags(cls, v: str | None) -> str | None:
             if v is not None and re.search(r"<script", v, re.IGNORECASE):
                 raise ValueError("Input may not contain script tags")
             return v
@@ -108,7 +108,7 @@ try:
         category: str
         status: str
         observations: int
-        precision: Optional[float]
+        precision: float | None
         bayesian_score: float
         keywords: list[str]
 
@@ -154,11 +154,11 @@ def create_app():  # noqa: C901
     try:
         from fastapi import FastAPI, HTTPException, Query, Request, Response
         from fastapi.middleware.cors import CORSMiddleware
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "FastAPI and Uvicorn are required for the API server.\n"
             "Install them with:  pip install fastapi uvicorn"
-        )
+        ) from err
 
     from sentinel.config import get_config
 
@@ -232,8 +232,8 @@ def create_app():  # noqa: C901
         - **job_data** — pre-structured JSON dict
         """
         from sentinel.analyzer import analyze_job, analyze_text, analyze_url
-        from sentinel.scanner import parse_job_json
         from sentinel.db import SentinelDB
+        from sentinel.scanner import parse_job_json
 
         if not req.text and not req.url and not req.job_data:
             raise HTTPException(
@@ -298,8 +298,8 @@ def create_app():  # noqa: C901
         Reports feed the learning flywheel — every confirmed scam or legitimate
         marking updates Bayesian signal weights via Thompson Sampling.
         """
-        from sentinel.knowledge import KnowledgeBase
         from sentinel.db import SentinelDB
+        from sentinel.knowledge import KnowledgeBase
 
         our_prediction = 0.0
         try:
@@ -339,7 +339,7 @@ def create_app():  # noqa: C901
 
     @app.get("/api/patterns", response_model=PatternsResponse, summary="List scam patterns")
     def patterns_endpoint(
-        category: Optional[str] = Query(
+        category: str | None = Query(
             None,
             description=(
                 "Filter by category: red_flag, warning, ghost_job, structural, positive"

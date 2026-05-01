@@ -110,10 +110,7 @@ def score_signals(
     log_odds = 0.0
     for s in signals:
         # Check for a learned weight override (match on signal name)
-        if s.name in learned:
-            w = learned[s.name]
-        else:
-            w = s.weight
+        w = learned.get(s.name, s.weight)
 
         w = max(1e-6, min(1.0 - 1e-6, w))
         # Positive signals move log-odds toward "legitimate"

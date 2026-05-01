@@ -3,9 +3,9 @@
 Publishes observations to engram, events to interop mesh, crash signals
 to autopsy, and flywheel state to session-bridge.
 """
+import contextlib
 import json
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -87,10 +87,8 @@ def read_ecosystem_context() -> dict:
     # Read session-bridge briefing for project context
     briefing_path = Path.home() / ".config" / "ctools" / "session-bridge" / "briefings" / "sentinel.json"
     if briefing_path.exists():
-        try:
+        with contextlib.suppress(OSError, json.JSONDecodeError):
             context["session_briefing"] = json.loads(briefing_path.read_text())
-        except (OSError, json.JSONDecodeError):
-            pass
     # Read engram patterns relevant to security/detection
     try:
         from engram.store.db import EngineDB
