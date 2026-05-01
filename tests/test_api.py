@@ -458,10 +458,13 @@ class TestHealthEndpoint:
         }
         assert required.issubset(set(data.keys()))
 
-    def test_health_fresh_db_is_healthy(self, client):
-        """A fresh DB with no data should report healthy=True."""
+    def test_health_fresh_db_is_cold_start(self, client):
+        """A fresh DB with no data should report cold_start=True, healthy=False."""
         response = client.get("/api/health")
-        assert response.json()["healthy"] is True
+        data = response.json()
+        assert data["cold_start"] is True
+        assert data["healthy"] is False
+        assert data["grade"] == "N/A"
 
     def test_health_status_field(self, client):
         """status should be 'ok' when healthy is True."""
@@ -475,7 +478,7 @@ class TestHealthEndpoint:
     def test_health_grade_is_letter(self, client):
         """grade should be one of A/B/C/D/F."""
         response = client.get("/api/health")
-        assert response.json()["grade"] in ("A", "B", "C", "D", "F")
+        assert response.json()["grade"] in ("A", "B", "C", "D", "F", "N/A")
 
     def test_health_regression_alarm_is_bool(self, client):
         """regression_alarm should be a boolean."""

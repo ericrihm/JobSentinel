@@ -234,66 +234,165 @@ def build_result(
 # ---------------------------------------------------------------------------
 
 class SignalWeightTracker:
-    """Bayesian weight learner for signal effectiveness.
+    """Canonical per-signal Bayesian Beta-Binomial posterior tracker.
 
-    Uses Beta(alpha, beta) posteriors per signal name.
-    Updated when user reports confirm/deny our predictions.
-    Thompson Sampling for exploration.
+    Each signal name maps to [alpha, beta].  On a true-positive / correct
+    observation alpha is incremented; on a false-positive / incorrect
+    observation beta is incremented.
+
+    Provides the full union of APIs from both the flywheel and scorer
+    variants:
+    - update(signal_name, is_true_positive/was_correct)
+    - expected_weight(signal_name)       -- E[theta] = alpha / (alpha + beta)
+    - sample(signal_name)                -- Thompson sample (stdlib-only)
+    - get_weight(signal_name)            -- alias for sample()
+    - all_weights()                      -- dict of expected weights
+    - get_posterior(signal_name)         -- raw (alpha, beta) tuple
+    - get_ranking()                      -- signals ranked by mean effectiveness
+    - save(path) / load(path)            -- persistence helpers
     """
 
     def __init__(self) -> None:
-        # Maps signal name -> (alpha, beta); Beta(1,1) = uniform prior
-        self._weights: dict[str, tuple[float, float]] = {}
+        # signal_name -> [alpha, beta]
+        self._posteriors: dict[str, list[float]] = {}
 
-    def _get_posterior(self, signal_name: str) -> tuple[float, float]:
-        return self._weights.get(signal_name, (1.0, 1.0))
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-    def update(self, signal_name: str, was_correct: bool) -> None:
-        """Update posterior: alpha += was_correct, beta += (not was_correct)."""
-        alpha, beta = self._get_posterior(signal_name)
-        if was_correct:
+    def update(
+        self,
+        signal_name: str,
+        is_true_positive: bool | None = None,
+        was_correct: bool | None = None,
+    ) -> None:
+        """Apply one observation to the posterior for *signal_name*.
+
+        Accepts either ``is_true_positive`` (flywheel API) or
+        ``was_correct`` (scorer API) — they are semantically identical.
+        Exactly one must be provided; the other may be omitted.
+        """
+        if is_true_positive is None and was_correct is None:
+            raise TypeError("update() requires either is_true_positive or was_correct")
+        positive = is_true_positive if is_true_positive is not None else was_correct
+        alpha, beta = self._get(signal_name)
+        if positive:
             alpha += 1.0
         else:
             beta += 1.0
-        self._weights[signal_name] = (alpha, beta)
+        self._posteriors[signal_name] = [alpha, beta]
+
+    def expected_weight(self, signal_name: str) -> float:
+        """E[theta] = alpha / (alpha + beta) for the Beta posterior."""
+        alpha, beta = self._get(signal_name)
+        return alpha / (alpha + beta)
+
+    def sample(self, signal_name: str) -> float:
+        """Thompson sample: draw one value from Beta(alpha, beta).
+
+        Uses the stdlib-only Gamma-ratio method (no numpy/scipy required).
+        """
+        alpha, beta = self._get(signal_name)
+        return self._beta_sample(alpha, beta)
 
     def get_weight(self, signal_name: str) -> float:
-        """Thompson sample from Beta posterior.
+        """Thompson sample from Beta posterior (alias for ``sample()``).
 
-        Samples a weight from the current posterior — balances exploitation
-        (high-precision signals get high weight) with exploration (uncertain
-        signals still get occasional high samples, keeping them in play).
+        Balances exploitation (high-precision signals get high weight)
+        with exploration (uncertain signals still get occasional high
+        samples, keeping them in play).
         """
-        alpha, beta = self._get_posterior(signal_name)
-        # random.betavariate is stdlib; no numpy needed
-        return random.betavariate(alpha, beta)
+        return self.sample(signal_name)
+
+    def all_weights(self) -> dict[str, float]:
+        """Return a dict of {signal_name: expected_weight} for all tracked signals."""
+        return {name: self.expected_weight(name) for name in self._posteriors}
+
+    def get_posterior(self, signal_name: str) -> tuple[float, float]:
+        """Return the raw (alpha, beta) tuple for *signal_name*."""
+        return tuple(self._get(signal_name))  # type: ignore[return-value]
 
     def get_ranking(self) -> list[tuple[str, float, float]]:
         """Return signals ranked by mean effectiveness: (name, mean, confidence).
 
         Mean = alpha / (alpha + beta).
-        Confidence here is a normalised measure of how many observations have
+        Confidence is a normalised measure of how many observations have
         been made; it saturates toward 1.0 as alpha + beta grows.
         """
         rows: list[tuple[str, float, float]] = []
-        for name, (alpha, beta) in self._weights.items():
-            n = alpha + beta - 2.0  # subtract the prior counts
+        for name, (alpha, beta) in ((n, self._get(n)) for n in self._posteriors):
+            n_obs = alpha + beta - 2.0  # subtract the prior counts
             mean = alpha / (alpha + beta)
-            obs_confidence = 1.0 - math.exp(-0.1 * max(n, 0.0))
+            obs_confidence = 1.0 - math.exp(-0.1 * max(n_obs, 0.0))
             rows.append((name, round(mean, 4), round(obs_confidence, 4)))
         rows.sort(key=lambda r: r[1], reverse=True)
         return rows
 
     def save(self, path: str) -> None:
+        """Persist posteriors to a JSON file at *path*."""
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        payload = {name: list(ab) for name, ab in self._weights.items()}
+        payload = {name: ab for name, ab in self._posteriors.items()}
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2)
 
     def load(self, path: str) -> None:
+        """Load posteriors from a JSON file previously written by ``save()``."""
         with open(path, encoding="utf-8") as fh:
             raw: dict[str, list[float]] = json.load(fh)
-        self._weights = {name: (ab[0], ab[1]) for name, ab in raw.items()}
+        self._posteriors = {name: [ab[0], ab[1]] for name, ab in raw.items()}
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get(self, signal_name: str) -> list[float]:
+        if signal_name not in self._posteriors:
+            self._posteriors[signal_name] = [1.0, 1.0]  # flat prior
+        return self._posteriors[signal_name]
+
+    @staticmethod
+    def _beta_sample(alpha: float, beta: float) -> float:
+        """Sample from Beta(alpha, beta) using the Gamma-ratio method.
+
+        Uses only the ``math`` and ``random`` modules — no numpy/scipy
+        required.
+        """
+        x = _gamma_sample(alpha)
+        y = _gamma_sample(beta)
+        total = x + y
+        if total == 0.0:
+            return 0.5
+        return x / total
+
+
+def _gamma_sample(shape: float) -> float:
+    """Sample from Gamma(shape, scale=1) — stdlib only (Marsaglia–Tsang)."""
+    if shape < 1.0:
+        # Boost trick: Gamma(shape) = Gamma(shape+1) * U^(1/shape)
+        return _gamma_sample(shape + 1.0) * (random.random() ** (1.0 / shape))
+
+    d = shape - 1.0 / 3.0
+    c = 1.0 / math.sqrt(9.0 * d)
+    while True:
+        z = _normal_sample()
+        v = 1.0 + c * z
+        if v <= 0.0:
+            continue
+        v = v ** 3
+        u = random.random()
+        if u < 1.0 - 0.0331 * (z ** 2) ** 2:
+            return d * v
+        if math.log(u) < 0.5 * z * z + d * (1.0 - v + math.log(v)):
+            return d * v
+
+
+def _normal_sample() -> float:
+    """Box-Muller standard normal — stdlib only."""
+    while True:
+        u1 = random.random()
+        u2 = random.random()
+        if u1 > 0.0:
+            return math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
 
 
 # ---------------------------------------------------------------------------

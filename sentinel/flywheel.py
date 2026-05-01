@@ -18,113 +18,12 @@ def _now_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Thompson-Sampling weight tracker
+# Thompson-Sampling weight tracker (canonical implementation lives in scorer)
 # ---------------------------------------------------------------------------
 
-class SignalWeightTracker:
-    """Per-signal Bayesian Beta-Binomial posterior tracker.
-
-    Each signal name maps to (alpha, beta).  On a true-positive report alpha
-    is incremented; on a false-positive beta is incremented.  The expected
-    weight is alpha / (alpha + beta).
-    """
-
-    def __init__(self) -> None:
-        # signal_name -> [alpha, beta]
-        self._posteriors: dict[str, list[float]] = {}
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def update(self, signal_name: str, is_true_positive: bool) -> None:
-        """Apply one observation to the posterior for *signal_name*."""
-        alpha, beta = self._get(signal_name)
-        if is_true_positive:
-            alpha += 1.0
-        else:
-            beta += 1.0
-        self._posteriors[signal_name] = [alpha, beta]
-
-    def expected_weight(self, signal_name: str) -> float:
-        """E[theta] = alpha / (alpha + beta) for the Beta posterior."""
-        alpha, beta = self._get(signal_name)
-        return alpha / (alpha + beta)
-
-    def sample(self, signal_name: str) -> float:
-        """Thompson sample: draw one value from Beta(alpha, beta).
-
-        Uses the Johnk method so we stay stdlib-only.
-        """
-        alpha, beta = self._get(signal_name)
-        return self._beta_sample(alpha, beta)
-
-    def all_weights(self) -> dict[str, float]:
-        return {name: self.expected_weight(name) for name in self._posteriors}
-
-    def get_posterior(self, signal_name: str) -> tuple[float, float]:
-        return tuple(self._get(signal_name))  # type: ignore[return-value]
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _get(self, signal_name: str) -> list[float]:
-        if signal_name not in self._posteriors:
-            self._posteriors[signal_name] = [1.0, 1.0]  # flat prior
-        return self._posteriors[signal_name]
-
-    @staticmethod
-    def _beta_sample(alpha: float, beta: float) -> float:
-        """Sample from Beta(alpha, beta) using the Johnk / Cheng method.
-
-        Uses only the `math` module — no numpy/scipy required.
-        """
-
-        # Gamma-based sampler: X = Gamma(alpha) / (Gamma(alpha) + Gamma(beta))
-        # We use Marsaglia & Tsang's method for Gamma > 1, and the scale transform
-        # for Gamma < 1.
-        x = _gamma_sample(alpha)
-        y = _gamma_sample(beta)
-        total = x + y
-        if total == 0.0:
-            return 0.5
-        return x / total
-
-
-def _gamma_sample(shape: float) -> float:
-    """Sample from Gamma(shape, scale=1) — stdlib only (Marsaglia–Tsang)."""
-    import random
-
-    if shape < 1.0:
-        # Boost trick: Gamma(shape) = Gamma(shape+1) * U^(1/shape)
-        return _gamma_sample(shape + 1.0) * (random.random() ** (1.0 / shape))
-
-    d = shape - 1.0 / 3.0
-    c = 1.0 / math.sqrt(9.0 * d)
-    while True:
-        z = _normal_sample()
-        v = 1.0 + c * z
-        if v <= 0.0:
-            continue
-        v = v ** 3
-        u = random.random()
-        if u < 1.0 - 0.0331 * (z ** 2) ** 2:
-            return d * v
-        if math.log(u) < 0.5 * z * z + d * (1.0 - v + math.log(v)):
-            return d * v
-
-
-def _normal_sample() -> float:
-    """Box-Muller standard normal — stdlib only."""
-    import math
-    import random
-
-    while True:
-        u1 = random.random()
-        u2 = random.random()
-        if u1 > 0.0:
-            return math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
+# SignalWeightTracker is defined in sentinel.scorer — imported here for
+# backwards-compatibility so callers that import from flywheel still work.
+from sentinel.scorer import SignalWeightTracker  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -864,9 +763,12 @@ class DetectionFlywheel:
         candidate_patterns = len(self.db.get_patterns(status="candidate"))
         deprecated_patterns = len(self.db.get_patterns(status="deprecated"))
 
-        # Simple health grade
+        # Simple health grade (cold-start = "N/A", not "F")
+        total_analyzed = stats.get("total_jobs_analyzed", 0)
         precision = accuracy.get("precision", 0.0)
-        if precision >= 0.85:
+        if total_analyzed == 0:
+            grade = "N/A"
+        elif precision >= 0.85:
             grade = "A"
         elif precision >= 0.75:
             grade = "B"
@@ -877,8 +779,11 @@ class DetectionFlywheel:
         else:
             grade = "F"
 
+        cold_start = total_analyzed < 10
+
         return {
-            "healthy": not regression.get("alarm", False),
+            "healthy": not regression.get("alarm", False) and not cold_start,
+            "cold_start": cold_start,
             "grade": grade,
             "precision": accuracy.get("precision", 0.0),
             "recall": accuracy.get("recall", 0.0),

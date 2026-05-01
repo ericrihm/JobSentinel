@@ -141,6 +141,7 @@ try:
         regression_alarm: bool
         cusum_statistic: float
         cycle_count: int
+        cold_start: bool = False
         checked_at: str
 
 except ImportError:
@@ -453,6 +454,7 @@ def create_app():  # noqa: C901
             "regression_alarm": health.get("regression_alarm", False),
             "cusum_statistic": health.get("cusum_statistic", 0.0),
             "cycle_count": health.get("cycle_count", 0),
+            "cold_start": health.get("cold_start", False),
             "checked_at": health.get("checked_at", ""),
         }
 
