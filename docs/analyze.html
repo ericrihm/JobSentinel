@@ -10,6 +10,11 @@
   <meta property="og:url" content="https://jobsentinel.org/analyze" />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://jobsentinel.org/og-preview.png" />
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="JobSentinel — Job Scam Analyzer">
+  <meta name="twitter:description" content="Paste a job description or URL to get an instant AI-powered scam risk score. Detect red flags, warnings, and ghost job indicators before you apply.">
+  <meta name="twitter:image" content="https://jobsentinel.org/og-preview.png">
+  <link rel="canonical" href="https://jobsentinel.org/analyze.html">
   <title>Job Scam Analyzer — JobSentinel</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
@@ -142,6 +147,11 @@
       outline: none;
     }
     #jobText::placeholder { color: var(--muted); }
+    #jobText {
+      position: relative;
+      z-index: 1;
+      background: transparent !important;
+    }
 
     .url-input-wrap {
       display: flex;
@@ -234,6 +244,31 @@
     .source-api     { background: rgba(88,166,255,.12); color: var(--accent); border: 1px solid rgba(88,166,255,.2); }
     .source-local   { background: rgba(210,153,34,.12); color: var(--yellow); border: 1px solid rgba(210,153,34,.2); }
     .source-offline { background: rgba(139,148,158,.1); color: var(--muted);  border: 1px solid var(--border); }
+    .source-live    { background: rgba(63,185,80,.12); color: var(--green); }
+
+    /* Evidence highlight layer */
+    .input-panel { position: relative; }
+    .highlight-layer {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      padding: 16px 18px;
+      font: inherit;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow: auto;
+      pointer-events: none;
+      color: transparent;
+      z-index: 0;
+    }
+    .highlight-layer mark {
+      color: transparent;
+      border-radius: 3px;
+      padding: 1px 0;
+    }
+    .highlight-layer mark.hl-red { background: rgba(248,81,73,.22); }
+    .highlight-layer mark.hl-orange { background: rgba(219,109,40,.20); }
+    .highlight-layer mark.hl-yellow { background: rgba(210,153,34,.18); }
+    .highlight-layer mark.hl-green { background: rgba(63,185,80,.18); }
 
     /* Results area */
     #resultsArea {
@@ -450,6 +485,38 @@
     .notice-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
     .notice-body { flex: 1; line-height: 1.4; }
 
+    /* Extension nudge banner */
+    .extension-nudge {
+      margin: 16px 0;
+      padding: 16px 20px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(88,166,255,.08), rgba(63,185,80,.08));
+      border: 1px solid rgba(88,166,255,.25);
+      animation: nudgeSlideIn 0.4s ease-out;
+      transition: opacity 0.3s;
+    }
+    @keyframes nudgeSlideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .nudge-content {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .nudge-icon { font-size: 1.6rem; }
+    .nudge-text { flex: 1; min-width: 200px; line-height: 1.5; }
+    .nudge-text strong { display: block; color: var(--text-primary); }
+    .nudge-text span { font-size: 0.9rem; color: var(--text-secondary); }
+    .nudge-actions { display: flex; align-items: center; gap: 10px; }
+    .nudge-dismiss {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
+      border-radius: 6px; transition: background 0.2s;
+    }
+    .nudge-dismiss:hover { background: var(--bg-hover); color: var(--text-primary); }
+
     /* Sidebar */
     .sidebar { display: flex; flex-direction: column; gap: 16px; }
 
@@ -663,6 +730,7 @@
 
         <!-- Text panel -->
         <div class="input-panel active" id="panelText" role="tabpanel" aria-labelledby="tabText">
+          <div id="jobTextHighlights" class="highlight-layer"></div>
           <textarea
             id="jobText"
             placeholder="Paste a job description here…
@@ -1231,6 +1299,7 @@ async function handleAnalyze() {
   });
 
   renderResults(result, source);
+  maybeShowExtensionNudge();
   document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -1288,6 +1357,7 @@ function renderResults(result, source) {
 
       <div class="result-actions">
         <button class="btn btn-secondary btn-sm" onclick="copyResults()" aria-label="Copy result summary">📋 Copy Summary</button>
+        <button class="btn btn-secondary btn-sm" onclick="shareAnalysis()" aria-label="Share analysis link">🔗 Share Link</button>
         <div class="spacer"></div>
         <div class="report-btns" aria-label="Report this posting">
           <label>Report as:</label>
@@ -1356,6 +1426,77 @@ function renderResults(result, source) {
   window._lastScore  = score;
 
   area.innerHTML = html;
+
+  // Highlight evidence in source text
+  const jobText = document.getElementById('jobText');
+  if (jobText && jobText.value.trim()) {
+    highlightEvidence(jobText.value, result);
+  }
+}
+
+/* ============================================================
+   EVIDENCE HIGHLIGHTING
+   ============================================================ */
+function highlightEvidence(originalText, result) {
+  const hl = document.getElementById('jobTextHighlights');
+  if (!hl) return;
+
+  const phrases = [];
+  const categories = [
+    { key: 'red_flags', cls: 'hl-red' },
+    { key: 'warnings', cls: 'hl-orange' },
+    { key: 'ghost_indicators', cls: 'hl-yellow' },
+    { key: 'positive_signals', cls: 'hl-green' },
+    { key: 'structural', cls: 'hl-yellow' },
+  ];
+
+  // Also check _triggered for evidence strings
+  if (result._triggered) {
+    result._triggered.forEach(s => {
+      if (s.evidence) {
+        const m = s.evidence.match(/"([^"]+)"/);
+        if (m) {
+          const cls = s.category === 'red_flag' ? 'hl-red' :
+                      s.category === 'warning' ? 'hl-orange' :
+                      s.category === 'positive' ? 'hl-green' : 'hl-yellow';
+          phrases.push({ text: m[1], cls });
+        }
+      }
+    });
+  }
+
+  categories.forEach(cat => {
+    (result[cat.key] || []).forEach(sig => {
+      if (sig.evidence) {
+        const m = sig.evidence.match(/"([^"]+)"/);
+        if (m) phrases.push({ text: m[1], cls: cat.cls });
+      }
+      if (sig.detail && sig.detail.length > 3 && sig.detail.length < 60) {
+        phrases.push({ text: sig.detail, cls: cat.cls });
+      }
+    });
+  });
+
+  if (phrases.length === 0) {
+    hl.innerHTML = escHtml(originalText);
+    return;
+  }
+
+  // Sort by length descending to match longest first
+  phrases.sort((a, b) => b.text.length - a.text.length);
+
+  // Build highlighted HTML
+  let html = escHtml(originalText);
+  const used = new Set();
+  phrases.forEach(p => {
+    if (used.has(p.text.toLowerCase())) return;
+    used.add(p.text.toLowerCase());
+    const escaped = escHtml(p.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(escaped, 'gi');
+    html = html.replace(re, match => `<mark class="${p.cls}">${match}</mark>`);
+  });
+
+  hl.innerHTML = html;
 }
 
 /* ============================================================
@@ -1409,6 +1550,33 @@ function copyResults() {
   });
 }
 
+
+/* ============================================================
+   SHARE ANALYSIS
+   ============================================================ */
+function shareAnalysis() {
+  if (!window._lastResult) return;
+  const text = document.getElementById('jobText').value || '';
+  const data = { t: text.slice(0, 3000), s: window._lastScore };
+  try {
+    const encoded = btoa(encodeURIComponent(JSON.stringify(data)));
+    const shareUrl = window.location.origin + window.location.pathname + '#share=' + encoded;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      const btn = document.querySelector('[onclick="shareAnalysis()"]');
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Link Copied!';
+        btn.style.color = 'var(--green)';
+        setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 2000);
+      }
+    });
+  } catch(e) {
+    // Fallback: just copy the summary
+    copyResults();
+  }
+}
+window.shareAnalysis = shareAnalysis;
+
 /* ============================================================
    CLEAR
    ============================================================ */
@@ -1418,6 +1586,8 @@ function clearAll() {
   document.getElementById('resultsArea').innerHTML = '';
   document.getElementById('sourceIndicator').style.display = 'none';
   window._lastResult = null;
+  const hl = document.getElementById('jobTextHighlights');
+  if (hl) hl.innerHTML = '';
 }
 
 /* ============================================================
@@ -1484,12 +1654,82 @@ function weightBg(w) {
 }
 
 /* ============================================================
+   EXTENSION NUDGE — show after 3rd analysis
+   ============================================================ */
+let _analyzeCount = parseInt(sessionStorage.getItem('sentinel_analyze_count') || '0', 10);
+const _NUDGE_THRESHOLD = 3;
+const _NUDGE_DISMISSED_KEY = 'sentinel_nudge_dismissed';
+
+function maybeShowExtensionNudge() {
+  _analyzeCount++;
+  sessionStorage.setItem('sentinel_analyze_count', String(_analyzeCount));
+  
+  if (_analyzeCount < _NUDGE_THRESHOLD) return;
+  if (sessionStorage.getItem(_NUDGE_DISMISSED_KEY)) return;
+  if (document.getElementById('extensionNudge')) return;
+  
+  const nudge = document.createElement('div');
+  nudge.id = 'extensionNudge';
+  nudge.className = 'extension-nudge reveal visible';
+  nudge.innerHTML = `
+    <div class="nudge-content">
+      <div class="nudge-icon">🚀</div>
+      <div class="nudge-text">
+        <strong>You've analyzed ${_analyzeCount} jobs manually.</strong>
+        <span>The browser extension does this automatically on LinkedIn &amp; Indeed as you browse — zero copy-pasting.</span>
+      </div>
+      <div class="nudge-actions">
+        <a href="https://github.com/ericrihm/JobSentinel#browser-extension" target="_blank" rel="noopener" class="btn btn-primary btn-sm">Get the Extension</a>
+        <button class="nudge-dismiss" onclick="dismissNudge()" aria-label="Dismiss">✕</button>
+      </div>
+    </div>
+  `;
+  
+  const results = document.getElementById('resultsArea');
+  results.parentNode.insertBefore(nudge, results);
+}
+
+function dismissNudge() {
+  sessionStorage.setItem(_NUDGE_DISMISSED_KEY, '1');
+  const el = document.getElementById('extensionNudge');
+  if (el) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }
+}
+window.dismissNudge = dismissNudge;
+
+/* ============================================================
    KEYBOARD: Ctrl+Enter to analyze
    ============================================================ */
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     handleAnalyze();
   }
+});
+
+/* LIVE ANALYSIS — debounced real-time scanning */
+let _liveTimer = null;
+const _LIVE_DEBOUNCE = 500;
+const _LIVE_MIN_CHARS = 50;
+
+document.getElementById('jobText').addEventListener('input', function() {
+  clearTimeout(_liveTimer);
+  const text = this.value.trim();
+  if (text.length < _LIVE_MIN_CHARS) return;
+  _liveTimer = setTimeout(() => {
+    if (activeTab !== 'text') return;
+    const result = runClientSide(text);
+    renderResults(result, result.source || 'client-side');
+    // Update live indicator
+    const badge = document.getElementById('sourceIndicator');
+    badge.style.display = 'inline-flex';
+    badge.className = 'source-badge source-live';
+    badge.textContent = 'Live';
+  }, _LIVE_DEBOUNCE);
+});
+
+/* Sync highlight layer scroll with textarea */
+document.getElementById('jobText').addEventListener('scroll', function() {
+  const hl = document.getElementById('jobTextHighlights');
+  if (hl) { hl.scrollTop = this.scrollTop; hl.scrollLeft = this.scrollLeft; }
 });
 
 /* ============================================================
@@ -1502,6 +1742,19 @@ const revealObserver = new IntersectionObserver(entries => {
 }, { threshold: 0.12 });
 document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
 
+// Restore shared analysis from URL hash
+(function() {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#share=')) return;
+  try {
+    const data = JSON.parse(decodeURIComponent(atob(hash.slice(7))));
+    if (data.t) {
+      document.getElementById('jobText').value = data.t;
+      setTimeout(() => handleAnalyze(), 300);
+    }
+  } catch(e) { /* invalid share link, ignore */ }
+})();
+
 // Expose globals
 window.handleAnalyze  = handleAnalyze;
 window.clearAll       = clearAll;
@@ -1510,6 +1763,7 @@ window.switchTab      = switchTab;
 window.clearHistory   = clearHistory;
 window.reportPosting  = reportPosting;
 window.copyResults    = copyResults;
+window.shareAnalysis  = shareAnalysis;
 </script>
 <script type="module" src="analyze-bridge.js"></script>
 </body>
