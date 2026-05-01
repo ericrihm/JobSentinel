@@ -67,22 +67,110 @@ def main(ctx: click.Context, use_json: bool) -> None:
 # ---------------------------------------------------------------------------
 
 @main.command()
-@click.argument("input_text")
+@click.argument("input_text", required=False, default=None)
 @click.option("--title", default="", help="Job title (for raw-text input).")
 @click.option("--company", default="", help="Company name (for raw-text input).")
 @click.option("--no-ai", is_flag=True, default=False,
               help="Disable AI escalation (heuristics only, faster).")
+@click.option("--file", "input_file", type=click.Path(exists=True), default=None,
+              help="Batch analyze from JSON file")
 @click.pass_context
-def analyze(ctx: click.Context, input_text: str, title: str, company: str, no_ai: bool) -> None:
+def analyze(ctx: click.Context, input_text: str | None, title: str, company: str, no_ai: bool, input_file: str | None) -> None:
     """Analyze a job posting for scam signals.
 
     INPUT_TEXT can be a LinkedIn URL or raw job description text.
+    Use --file to batch-analyze from a JSON file.
     """
-    from sentinel.analyzer import analyze_job, analyze_text, analyze_url, format_result_text
+    from sentinel.analyzer import analyze_job, analyze_text, analyze_url, batch_analyze
     from sentinel.scanner import parse_job_text
     from sentinel.db import SentinelDB
 
     use_ai = not no_ai
+
+    # --- Batch mode ---
+    if input_file is not None:
+        from sentinel.scanner import load_jobs_from_file
+        import os
+        try:
+            jobs = load_jobs_from_file(input_file)
+        except Exception as exc:
+            if ctx.obj.get("json"):
+                click.echo(json.dumps({"error": str(exc)}, indent=2))
+            else:
+                click.echo(click.style(f"Error loading file: {exc}", fg="red"), err=True)
+            sys.exit(1)
+
+        results = batch_analyze(jobs, use_ai=use_ai)
+        results.sort(key=lambda r: r.scam_score, reverse=True)
+
+        # Risk-level counts
+        _RISK_ORDER = ["scam", "high", "suspicious", "low", "safe"]
+        counts: dict[str, int] = {level: 0 for level in _RISK_ORDER}
+        for r in results:
+            level = r.risk_level.value
+            if level in counts:
+                counts[level] += 1
+
+        file_basename = os.path.basename(input_file)
+
+        if ctx.obj.get("json"):
+            click.echo(json.dumps(
+                {
+                    "file": input_file,
+                    "total": len(results),
+                    "results": [r.to_dict() for r in results],
+                    "summary": counts,
+                },
+                indent=2,
+            ))
+            return
+
+        # Formatted table
+        click.echo("")
+        click.echo(click.style(
+            f"  Batch Analysis: {len(results)} jobs from {file_basename}", bold=True
+        ))
+        click.echo("  " + "═" * 55)
+
+        _COL_SCORE = 6
+        _COL_RISK = 14
+        _COL_TITLE = 26
+        _COL_COMPANY = 20
+
+        header = (
+            f"  {'Score':<{_COL_SCORE}}  {'Risk':<{_COL_RISK}}  "
+            f"{'Title':<{_COL_TITLE}}  {'Company':<{_COL_COMPANY}}"
+        )
+        click.echo(click.style(header, bold=True))
+        click.echo("  " + "─" * 55)
+
+        for r in results:
+            score_str = f"{r.scam_score:.2f}"
+            risk_badge = _style_risk(r.risk_level.value)
+            title_str = (r.job.title or "(no title)")[:_COL_TITLE]
+            company_str = (r.job.company or "(unknown)")[:_COL_COMPANY]
+            click.echo(
+                f"  {score_str:<{_COL_SCORE}}  {risk_badge:<{_COL_RISK}}  "
+                f"{title_str:<{_COL_TITLE}}  {company_str:<{_COL_COMPANY}}"
+            )
+
+        summary_parts = []
+        for level in _RISK_ORDER:
+            if counts[level] > 0:
+                label = level.upper()
+                summary_parts.append(f"{counts[level]} {label}")
+        click.echo("")
+        click.echo(f"  Summary: {', '.join(summary_parts) if summary_parts else 'no results'}")
+        click.echo("")
+        return
+
+    # --- Single-job mode ---
+    if not input_text:
+        click.echo(click.style(
+            "Error: provide INPUT_TEXT or --file for batch mode.", fg="red"
+        ), err=True)
+        sys.exit(1)
+
     is_url = input_text.startswith("http://") or input_text.startswith("https://")
 
     try:
@@ -191,13 +279,15 @@ def analyze(ctx: click.Context, input_text: str, title: str, company: str, no_ai
 @main.command()
 @click.argument("company_name")
 @click.option("--domain", default="", help="Company domain for WHOIS check (e.g. example.com).")
+@click.option("--refresh", is_flag=True, default=False,
+              help="Bypass cache and force fresh validation.")
 @click.pass_context
-def validate(ctx: click.Context, company_name: str, domain: str) -> None:
+def validate(ctx: click.Context, company_name: str, domain: str, refresh: bool) -> None:
     """Validate a company's legitimacy."""
     from sentinel.validator import validate_company
 
     try:
-        profile = validate_company(company_name, domain=domain)
+        profile = validate_company(company_name, domain=domain, refresh=refresh)
     except Exception as exc:
         if ctx.obj.get("json"):
             click.echo(json.dumps({"error": str(exc)}, indent=2))
