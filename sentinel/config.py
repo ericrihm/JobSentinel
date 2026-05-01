@@ -42,6 +42,11 @@ def get_config() -> SentinelConfig:
     global _config
     if _config is None:
         _config = load_config()
+    # Always honour the env-var so tests (and containers) can override the
+    # cached config without needing to reset the module-level singleton.
+    env_db = os.environ.get("SENTINEL_DB_PATH")
+    if env_db:
+        _config.db_path = env_db
     return _config
 
 

@@ -145,15 +145,33 @@ def score_signals(
     return scam_score, confidence
 
 
+# ---------------------------------------------------------------------------
+# Risk classification thresholds (mutable — auto-adjusted by calibration)
+# ---------------------------------------------------------------------------
+
+#: Maps risk-level name → upper boundary (exclusive).
+#: Score >= scam threshold → SCAM; score in [high, scam) → HIGH; etc.
+_RISK_THRESHOLDS: dict[str, float] = {
+    "safe": 0.2,        # score < 0.2  → SAFE
+    "low": 0.4,         # score < 0.4  → LOW
+    "suspicious": 0.6,  # score < 0.6  → SUSPICIOUS
+    "high": 0.8,        # score < 0.8  → HIGH
+    # score >= 0.8      → SCAM
+}
+
+# Maximum allowed shift per auto-adjustment cycle (prevents wild swings)
+_MAX_THRESHOLD_DELTA: float = 0.05
+
+
 def classify_risk(scam_score: float) -> RiskLevel:
-    """Map score to risk level."""
-    if scam_score < 0.2:
+    """Map score to risk level using the (adjustable) _RISK_THRESHOLDS table."""
+    if scam_score < _RISK_THRESHOLDS["safe"]:
         return RiskLevel.SAFE
-    if scam_score < 0.4:
+    if scam_score < _RISK_THRESHOLDS["low"]:
         return RiskLevel.LOW
-    if scam_score < 0.6:
+    if scam_score < _RISK_THRESHOLDS["suspicious"]:
         return RiskLevel.SUSPICIOUS
-    if scam_score < 0.8:
+    if scam_score < _RISK_THRESHOLDS["high"]:
         return RiskLevel.HIGH
     return RiskLevel.SCAM
 
@@ -241,3 +259,288 @@ class SignalWeightTracker:
         with open(path, encoding="utf-8") as fh:
             raw: dict[str, list[float]] = json.load(fh)
         self._weights = {name: (ab[0], ab[1]) for name, ab in raw.items()}
+
+
+# ---------------------------------------------------------------------------
+# Ensemble scoring
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class EnsembleResult:
+    """Output of EnsembleScorer.score_ensemble()."""
+    primary_score: float
+    weighted_avg_score: float
+    majority_vote_score: float
+    ensemble_score: float
+    disagreement: float
+    confidence_adjustment: float
+    method_scores: dict[str, float] = field(default_factory=dict)
+
+
+class EnsembleScorer:
+    """Combines three independent scoring methods and auto-adjusts weights.
+
+    Methods:
+    1. Primary   — existing log-odds Bayesian scorer (weight 0.6 default)
+    2. Weighted  — simple weighted average of signal weights / max possible
+    3. Majority  — fraction of signals above a threshold
+
+    When disagreement (std-dev across the three scores) > 0.2 the result is
+    flagged as "uncertain" and the ensemble score confidence is reduced.
+
+    Per-method accuracy is tracked in ``flywheel_metrics`` and ensemble
+    weights auto-adjust toward historically more accurate methods.
+    """
+
+    # Default ensemble weights — sum must equal 1.0
+    _DEFAULT_WEIGHTS: dict[str, float] = {
+        "primary":       0.6,
+        "weighted_avg":  0.2,
+        "majority_vote": 0.2,
+    }
+
+    # Disagreement threshold above which we flag as uncertain
+    DISAGREEMENT_THRESHOLD: float = 0.2
+
+    # Majority-vote threshold: signals with weight above this count as "scam vote"
+    _MAJORITY_VOTE_SIGNAL_THRESHOLD: float = 0.5
+
+    def __init__(self) -> None:
+        # method_name -> (alpha, beta)  Beta posteriors for accuracy tracking
+        self._method_posteriors: dict[str, list[float]] = {
+            "primary":       [1.0, 1.0],
+            "weighted_avg":  [1.0, 1.0],
+            "majority_vote": [1.0, 1.0],
+        }
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def score_ensemble(
+        self,
+        db,  # SentinelDB or None — used to load per-method accuracy
+        job,  # JobPosting — not used directly, reserved for future use
+        signals: list,  # list[ScamSignal]
+    ) -> "EnsembleResult":
+        """Run all three scoring methods and return an EnsembleResult.
+
+        Args:
+            db:      Optional SentinelDB instance for loading per-method weights.
+            job:     The JobPosting being scored (reserved for future use).
+            signals: The ScamSignal list produced by ``extract_signals(job)``.
+
+        Returns:
+            EnsembleResult with all method scores, disagreement, and
+            confidence_adjustment (-0.2 when uncertain, 0.0 otherwise).
+        """
+        from sentinel.models import SignalCategory
+
+        # --- Method 1: Primary log-odds Bayesian scorer ---
+        primary, _conf = score_signals(signals)
+
+        # --- Method 2: Weighted average (sum of weights / max possible) ---
+        weighted_avg = self._score_weighted_avg(signals)
+
+        # --- Method 3: Majority vote (fraction of signals firing above threshold) ---
+        majority_vote = self._score_majority_vote(signals)
+
+        method_scores = {
+            "primary":       round(primary, 4),
+            "weighted_avg":  round(weighted_avg, 4),
+            "majority_vote": round(majority_vote, 4),
+        }
+
+        # Disagreement: std dev of the three scores
+        vals = [primary, weighted_avg, majority_vote]
+        mean_val = sum(vals) / 3.0
+        variance = sum((v - mean_val) ** 2 for v in vals) / 3.0
+        disagreement = round(math.sqrt(variance), 4)
+
+        # Confidence adjustment: penalise high disagreement
+        confidence_adjustment = -0.2 if disagreement > self.DISAGREEMENT_THRESHOLD else 0.0
+
+        # Ensemble weights — load auto-adjusted weights from DB if available
+        weights = self._get_ensemble_weights(db)
+
+        ensemble_score = (
+            weights["primary"]       * primary
+            + weights["weighted_avg"]  * weighted_avg
+            + weights["majority_vote"] * majority_vote
+        )
+        ensemble_score = round(min(1.0, max(0.0, ensemble_score)), 4)
+
+        return EnsembleResult(
+            primary_score=round(primary, 4),
+            weighted_avg_score=round(weighted_avg, 4),
+            majority_vote_score=round(majority_vote, 4),
+            ensemble_score=ensemble_score,
+            disagreement=disagreement,
+            confidence_adjustment=confidence_adjustment,
+            method_scores=method_scores,
+        )
+
+    def update_method_accuracy(
+        self, db, method_name: str, was_correct: bool
+    ) -> None:
+        """Record one accuracy observation for *method_name*.
+
+        Updates both the in-process Beta posterior and the DB flywheel_metrics
+        column (via an extra JSON blob in the last cycle row if available).
+        Falls back gracefully when db is None.
+        """
+        if method_name not in self._method_posteriors:
+            return
+        alpha, beta = self._method_posteriors[method_name]
+        if was_correct:
+            alpha += 1.0
+        else:
+            beta += 1.0
+        self._method_posteriors[method_name] = [alpha, beta]
+
+        # Persist to DB as a best-effort JSON metadata update
+        if db is not None:
+            try:
+                self._persist_method_accuracy(db)
+            except Exception:
+                logger.debug("Could not persist method accuracy to DB", exc_info=True)
+
+    def get_method_accuracy(self) -> dict[str, float]:
+        """Return the expected accuracy (mean of Beta posterior) per method."""
+        return {
+            name: ab[0] / (ab[0] + ab[1])
+            for name, ab in self._method_posteriors.items()
+        }
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _score_weighted_avg(self, signals: list) -> float:
+        """Simple weighted average: sum(weights) / max_possible_weight_sum."""
+        from sentinel.models import SignalCategory
+        if not signals:
+            return 0.0
+
+        scam_weight_sum = 0.0
+        max_possible = 0.0
+        for s in signals:
+            w = max(1e-6, min(1.0, s.weight))
+            max_possible += w
+            if s.category != SignalCategory.POSITIVE:
+                scam_weight_sum += w
+            # Positive signals cancel out some scam weight
+            else:
+                scam_weight_sum -= w * 0.5  # partial cancellation
+
+        if max_possible == 0.0:
+            return 0.0
+        return max(0.0, min(1.0, scam_weight_sum / max_possible))
+
+    def _score_majority_vote(self, signals: list) -> float:
+        """Fraction of signals that vote 'scam' (weight > threshold)."""
+        from sentinel.models import SignalCategory
+        if not signals:
+            return 0.0
+
+        scam_votes = 0
+        for s in signals:
+            if s.category != SignalCategory.POSITIVE and s.weight >= self._MAJORITY_VOTE_SIGNAL_THRESHOLD:
+                scam_votes += 1
+        return round(scam_votes / len(signals), 4)
+
+    def _get_ensemble_weights(self, db) -> dict[str, float]:
+        """Return ensemble weights, auto-adjusted by historical accuracy if available."""
+        try:
+            if db is not None:
+                return self._compute_adjusted_weights(db)
+        except Exception:
+            logger.debug("Could not load ensemble weights from DB; using defaults", exc_info=True)
+        return dict(self._DEFAULT_WEIGHTS)
+
+    def _compute_adjusted_weights(self, db) -> dict[str, float]:
+        """Compute ensemble weights proportional to per-method Beta-posterior accuracy.
+
+        Loads per-method accuracy stored by ``_persist_method_accuracy`` and
+        uses softmax-like normalisation to keep weights summing to 1.0.
+        Falls back to defaults when no history is available.
+        """
+        stored = self._load_method_accuracy(db)
+        if stored:
+            for name, acc in stored.items():
+                if name in self._method_posteriors:
+                    # Don't override if we have better local data
+                    local_obs = sum(self._method_posteriors[name]) - 2.0
+                    if local_obs < 5:
+                        # Blend stored accuracy into local posterior
+                        alpha = acc * 10 + 1.0
+                        beta = (1.0 - acc) * 10 + 1.0
+                        self._method_posteriors[name] = [alpha, beta]
+
+        accuracies = self.get_method_accuracy()
+
+        # Apply default anchoring: primary gets min 0.4 weight
+        raw = {
+            "primary":       max(0.4, accuracies.get("primary", 0.6)),
+            "weighted_avg":  accuracies.get("weighted_avg", 0.2),
+            "majority_vote": accuracies.get("majority_vote", 0.2),
+        }
+        total = sum(raw.values())
+        if total == 0.0:
+            return dict(self._DEFAULT_WEIGHTS)
+        return {k: round(v / total, 4) for k, v in raw.items()}
+
+    def _persist_method_accuracy(self, db) -> None:
+        """Store per-method accuracy as a JSON record in the DB."""
+        accs = self.get_method_accuracy()
+        try:
+            db.conn.execute(
+                """
+                INSERT OR REPLACE INTO ensemble_method_accuracy
+                    (method_name, alpha, beta, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("primary", *self._method_posteriors["primary"], _now_iso()),
+            )
+            db.conn.execute(
+                """
+                INSERT OR REPLACE INTO ensemble_method_accuracy
+                    (method_name, alpha, beta, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("weighted_avg", *self._method_posteriors["weighted_avg"], _now_iso()),
+            )
+            db.conn.execute(
+                """
+                INSERT OR REPLACE INTO ensemble_method_accuracy
+                    (method_name, alpha, beta, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                ("majority_vote", *self._method_posteriors["majority_vote"], _now_iso()),
+            )
+            db.conn.commit()
+        except Exception:
+            # Table may not exist yet — handled by DB migration
+            pass
+
+    def _load_method_accuracy(self, db) -> dict[str, float]:
+        """Load stored per-method accuracy from the ensemble_method_accuracy table."""
+        try:
+            rows = db.conn.execute(
+                "SELECT method_name, alpha, beta FROM ensemble_method_accuracy"
+            ).fetchall()
+            return {
+                row[0]: row[1] / (row[1] + row[2])
+                for row in rows
+                if (row[1] + row[2]) > 0
+            }
+        except Exception:
+            return {}
+
+
+def _now_iso() -> str:
+    from datetime import UTC, datetime
+    return datetime.now(UTC).isoformat()

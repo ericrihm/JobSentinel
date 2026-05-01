@@ -13,6 +13,7 @@ Uses Thompson Sampling to decide which improvement avenue to explore.
 """
 import json
 import logging
+import math
 import random
 import re
 import uuid
@@ -22,7 +23,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sentinel.db import SentinelDB
-from sentinel.ecosystem import publish_flywheel_state, publish_observation
+try:
+    from sentinel.ecosystem import publish_flywheel_state, publish_observation
+except ImportError:
+    def publish_flywheel_state(metrics: dict) -> None: pass
+    def publish_observation(category: str, evidence: str, context: str = "") -> None: pass
 from sentinel.flywheel import DetectionFlywheel
 
 logger = logging.getLogger(__name__)
@@ -53,6 +58,10 @@ class ImprovementArm:
     alpha: float = 1.0
     beta: float = 1.0
     attempts: int = 0
+    # Meta-learning: continuous precision-delta tracking
+    cumulative_precision_delta: float = 0.0
+    best_improvement: float = 0.0
+    total_precision_runs: int = 0
 
     def sample(self) -> float:
         return random.betavariate(self.alpha, self.beta)
@@ -60,6 +69,23 @@ class ImprovementArm:
     @property
     def mean(self) -> float:
         return self.alpha / (self.alpha + self.beta)
+
+    @property
+    def avg_improvement(self) -> float:
+        """Average precision delta per run (0.0 if no runs yet)."""
+        if self.total_precision_runs == 0:
+            return 0.0
+        return self.cumulative_precision_delta / self.total_precision_runs
+
+    def ucb_score(self, total_attempts: int) -> float:
+        """UCB1-style score: Thompson sample + exploration bonus.
+
+        exploration_bonus = 0.3 * sqrt(log(N+1) / (n+1))
+        where N = total attempts across all arms, n = this arm's attempts.
+        """
+        base = self.sample()
+        bonus = 0.3 * math.sqrt(math.log(total_attempts + 1) / (self.attempts + 1))
+        return base + bonus
 
 
 @dataclass
@@ -84,6 +110,7 @@ class InnovationEngine:
         ImprovementArm("cross_signal_correlation", "Find signal combinations that predict scams"),
         ImprovementArm("keyword_expansion", "Expand scam keyword lists from new reports"),
         ImprovementArm("threshold_tuning", "Tune risk classification thresholds"),
+        ImprovementArm("source_quality", "Deprioritize low-yield sources via Thompson Sampling"),
     ]
 
     STATE_PATH = Path.home() / ".sentinel" / "innovation_state.json"
@@ -103,15 +130,28 @@ class InnovationEngine:
                         arm.alpha = data[arm.name].get("alpha", 1.0)
                         arm.beta = data[arm.name].get("beta", 1.0)
                         arm.attempts = data[arm.name].get("attempts", 0)
+                        # Meta-learning fields (may be absent in legacy state files)
+                        arm.cumulative_precision_delta = data[arm.name].get(
+                            "cumulative_precision_delta", 0.0
+                        )
+                        arm.best_improvement = data[arm.name].get("best_improvement", 0.0)
+                        arm.total_precision_runs = data[arm.name].get("total_precision_runs", 0)
         except (OSError, json.JSONDecodeError):
             pass
 
     def _save_state(self):
-        """Persist Thompson Sampling state."""
+        """Persist Thompson Sampling state with meta-learning fields."""
         try:
             self.STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
             data = {
-                arm.name: {"alpha": arm.alpha, "beta": arm.beta, "attempts": arm.attempts}
+                arm.name: {
+                    "alpha": arm.alpha,
+                    "beta": arm.beta,
+                    "attempts": arm.attempts,
+                    "cumulative_precision_delta": arm.cumulative_precision_delta,
+                    "best_improvement": arm.best_improvement,
+                    "total_precision_runs": arm.total_precision_runs,
+                }
                 for arm in self.STRATEGIES
             }
             self.STATE_PATH.write_text(json.dumps(data, indent=2))
@@ -119,16 +159,22 @@ class InnovationEngine:
             pass
 
     def select_strategy(self) -> ImprovementArm:
-        """Thompson Sampling: pick the most promising improvement avenue."""
-        scores = [(arm.sample(), arm) for arm in self.STRATEGIES]
+        """UCB-augmented Thompson Sampling: pick the most promising arm.
+
+        Score = Thompson sample (Beta posterior) + UCB exploration bonus.
+        This ensures under-explored arms are not starved of trials.
+        """
+        total = sum(a.attempts for a in self.STRATEGIES)
+        scores = [(arm.ucb_score(total), arm) for arm in self.STRATEGIES]
         scores.sort(key=lambda x: x[0], reverse=True)
         return scores[0][1]
 
     def run_cycle(self, max_strategies: int = 3) -> list[ImprovementResult]:
         """Run one innovation cycle.
 
-        Selects top strategies via Thompson Sampling, executes each,
-        measures impact, and updates posteriors.
+        Selects top strategies via UCB-augmented Thompson Sampling, executes
+        each, measures precision improvement before/after, and updates
+        posteriors with actual precision delta (not binary success).
         """
         results = []
         baseline = self.flywheel.compute_accuracy()
@@ -142,17 +188,38 @@ class InnovationEngine:
 
         for arm in selected:
             arm.attempts += 1
-            result = self._execute_strategy(arm, baseline_precision)
 
-            if result.success:
+            # Snapshot precision before strategy execution
+            pre_acc = self.flywheel.compute_accuracy()
+            pre_precision = pre_acc.get("precision", 0.0)
+
+            result = self._execute_strategy(arm, pre_precision)
+
+            # Snapshot precision after strategy execution
+            post_acc = self.flywheel.compute_accuracy()
+            post_precision = post_acc.get("precision", 0.0)
+            precision_delta = post_precision - pre_precision
+
+            # Update meta-learning stats
+            arm.total_precision_runs += 1
+            arm.cumulative_precision_delta += precision_delta
+            if precision_delta > arm.best_improvement:
+                arm.best_improvement = precision_delta
+
+            # Update Thompson Sampling posteriors using continuous reward:
+            # positive delta → alpha (success), non-positive → beta (failure)
+            if precision_delta > 0:
                 arm.alpha += 1
             else:
                 arm.beta += 1
 
+            # Attach the measured delta to the result
+            result.precision_delta = precision_delta
+
             results.append(result)
             publish_observation(
-                "success" if result.success else "partial",
-                f"innovation/{arm.name}: {result.detail}",
+                "success" if precision_delta > 0 else "partial",
+                f"innovation/{arm.name}: {result.detail} (Δprecision={precision_delta:+.4f})",
             )
 
         self._save_state()
@@ -160,11 +227,12 @@ class InnovationEngine:
         # Publish cycle summary
         publish_flywheel_state({
             "strategies_run": len(results),
-            "successful": sum(1 for r in results if r.success),
+            "successful": sum(1 for r in results if r.precision_delta > 0),
             "total_new_patterns": sum(r.new_patterns for r in results),
             "total_deprecated": sum(r.deprecated_patterns for r in results),
             "grade": self.flywheel.get_health().get("grade", "?"),
             "precision": baseline_precision,
+            "total_precision_delta": sum(r.precision_delta for r in results),
         })
 
         return results
@@ -180,6 +248,7 @@ class InnovationEngine:
             "cross_signal_correlation": self._correlate_signals,
             "keyword_expansion": self._expand_keywords,
             "threshold_tuning": self._tune_thresholds,
+            "source_quality": self._evaluate_source_quality,
         }
         fn = dispatch.get(arm.name, self._noop)
         return fn(baseline_precision)
@@ -588,11 +657,61 @@ class InnovationEngine:
             f"Thresholds balanced: precision={precision:.0%} recall={recall:.0%}",
         )
 
+    def _evaluate_source_quality(self, baseline: float) -> ImprovementResult:
+        """Evaluate per-source yield and surface low-performing sources.
+
+        Uses source_stats to compute scam yield rate per source.  Reports the
+        worst source (lowest scams_detected / jobs_ingested) so the daemon can
+        deprioritize it.  Thompson Sampling handles exploration vs. exploitation
+        of source ordering across cycles.
+        """
+        stats = self.db.get_source_stats()
+        if not stats:
+            return ImprovementResult(
+                "source_quality", False, "No source stats available — run ingestion first"
+            )
+
+        # Compute yield rate for each source that has ingested at least one job
+        rated = []
+        for row in stats:
+            ingested = row.get("jobs_ingested", 0)
+            if ingested <= 0:
+                continue
+            scams = row.get("scams_detected", 0)
+            yield_rate = scams / ingested
+            rated.append((row["source"], yield_rate, ingested, scams))
+
+        if not rated:
+            return ImprovementResult(
+                "source_quality", False, "No source stats available — run ingestion first"
+            )
+
+        # Sort ascending by yield rate to find the worst performer
+        rated.sort(key=lambda x: x[1])
+        worst_source, worst_yield, worst_ingested, worst_scams = rated[0]
+
+        # Sort descending to find the best
+        rated.sort(key=lambda x: x[1], reverse=True)
+        best_source, best_yield, _, _ = rated[0]
+
+        detail_parts = [
+            f"worst={worst_source} (yield={worst_yield:.1%}, {worst_scams}/{worst_ingested})",
+            f"best={best_source} (yield={best_yield:.1%})",
+        ]
+        detail = "; ".join(detail_parts)
+
+        return ImprovementResult(
+            "source_quality",
+            True,
+            detail,
+        )
+
     def _noop(self, baseline: float) -> ImprovementResult:
         return ImprovementResult("unknown", False, "Unknown strategy")
 
     def get_strategy_rankings(self) -> list[dict]:
-        """Return strategies ranked by Thompson Sampling mean."""
+        """Return strategies ranked by Thompson Sampling mean with meta-learning fields."""
+        total = sum(a.attempts for a in self.STRATEGIES)
         ranked = sorted(self.STRATEGIES, key=lambda a: a.mean, reverse=True)
         return [{
             "name": a.name,
@@ -601,7 +720,59 @@ class InnovationEngine:
             "attempts": a.attempts,
             "alpha": a.alpha,
             "beta": a.beta,
+            "avg_improvement": round(a.avg_improvement, 6),
+            "cumulative_precision_delta": round(a.cumulative_precision_delta, 6),
+            "best_improvement": round(a.best_improvement, 6),
+            "total_precision_runs": a.total_precision_runs,
+            "exploration_bonus": round(
+                0.3 * math.sqrt(math.log(total + 1) / (a.attempts + 1)), 6
+            ),
         } for a in ranked]
+
+    def get_meta_learning_report(self) -> dict:
+        """Meta-learning performance report: per-arm precision delta stats."""
+        arms_with_runs = [a for a in self.STRATEGIES if a.total_precision_runs > 0]
+
+        if arms_with_runs:
+            most_effective = max(arms_with_runs, key=lambda a: a.avg_improvement)
+            least_effective = min(arms_with_runs, key=lambda a: a.avg_improvement)
+            most_effective_name = most_effective.name
+            least_effective_name = least_effective.name
+        else:
+            most_effective_name = None
+            least_effective_name = None
+
+        # Under-explored: arm with fewest attempts
+        most_under_explored = min(self.STRATEGIES, key=lambda a: a.attempts)
+
+        total = sum(a.attempts for a in self.STRATEGIES)
+        total_precision_runs = sum(a.total_precision_runs for a in self.STRATEGIES)
+        total_cumulative_delta = sum(a.cumulative_precision_delta for a in self.STRATEGIES)
+
+        arms = []
+        for a in sorted(self.STRATEGIES, key=lambda x: x.avg_improvement, reverse=True):
+            bonus = 0.3 * math.sqrt(math.log(total + 1) / (a.attempts + 1))
+            arms.append({
+                "name": a.name,
+                "runs": a.attempts,
+                "precision_runs": a.total_precision_runs,
+                "avg_precision_delta": round(a.avg_improvement, 6),
+                "cumulative_precision_delta": round(a.cumulative_precision_delta, 6),
+                "best_improvement": round(a.best_improvement, 6),
+                "thompson_mean": round(a.mean, 4),
+                "exploration_bonus": round(bonus, 6),
+                "success_rate": round(a.alpha / (a.alpha + a.beta) - 0.5, 4),
+            })
+
+        return {
+            "total_strategy_runs": total,
+            "total_precision_runs": total_precision_runs,
+            "total_cumulative_delta": round(total_cumulative_delta, 6),
+            "most_effective_arm": most_effective_name,
+            "least_effective_arm": least_effective_name,
+            "most_under_explored": most_under_explored.name,
+            "arms": arms,
+        }
 
     def get_report(self) -> dict:
         """Full innovation engine status report."""
@@ -612,4 +783,5 @@ class InnovationEngine:
             "recall": health.get("recall", 0),
             "strategies": self.get_strategy_rankings(),
             "total_cycles": sum(a.attempts for a in self.STRATEGIES),
+            "meta_learning": self.get_meta_learning_report(),
         }

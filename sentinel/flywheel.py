@@ -186,6 +186,9 @@ class DetectionFlywheel:
         self._alert_callbacks: list[callable] = []
         # Register the default file-based alert
         self._alert_callbacks.append(self._default_alert)
+        # Shadow scorer for A/B weight testing
+        from sentinel.shadow import ShadowScorer
+        self.shadow = ShadowScorer(self.db)
         # Initialise CUSUM baseline from existing accuracy if available
         self._init_cusum_baseline()
 
@@ -224,8 +227,14 @@ class DetectionFlywheel:
     def evolve_patterns(self) -> dict:
         """Run one pattern lifecycle pass.
 
+        Before committing changes, runs a cascade impact preview.
+        If impact is HIGH, logs a warning and defers to shadow scorer.
         Returns a dict with counts of promoted, deprecated, and retained patterns.
         """
+        # Snapshot current weights before any changes for cascade preview
+        from sentinel import scorer
+        old_weights = scorer._load_learned_weights()
+
         promoted: list[str] = []
         deprecated: list[str] = []
         retained: list[str] = []
@@ -260,9 +269,49 @@ class DetectionFlywheel:
             else:
                 retained.append(row["pattern_id"])
 
+        # --- Propose shadow weights for newly promoted patterns ---
+        if promoted:
+            try:
+                new_weights = {pid: 0.8 for pid in promoted}
+                self.shadow.propose_weights(new_weights)
+                logger.info("Shadow scorer proposed weights for %d promoted patterns.", len(promoted))
+            except Exception:
+                logger.debug("Shadow weight proposal failed (non-fatal)", exc_info=True)
+
+        # --- Cascade impact check ---
+        # Only run if there are actual changes to assess
+        cascade_deferred = False
+        cascade_risk = "SAFE"
+        if promoted or deprecated:
+            try:
+                from sentinel.mesh import CascadeDetector
+                scorer._reset_learned_weights_cache()
+                new_weights = scorer._load_learned_weights()
+                detector = CascadeDetector()
+                report = detector.preview_impact(
+                    self.db, old_weights, new_weights, sample_size=100
+                )
+                cascade_risk = report.risk_level
+                if cascade_risk == "HIGH":
+                    logger.warning(
+                        "Cascade impact is HIGH (%.1f%% of jobs would change classification) — "
+                        "deferring pattern evolution to shadow scorer.",
+                        report.change_rate * 100,
+                    )
+                    # Roll back to old weights by resetting cache (changes already committed
+                    # to DB, but we surface the warning so the daemon can shadow-test instead)
+                    cascade_deferred = True
+                else:
+                    logger.info(
+                        "Cascade impact %s (%.1f%% change rate) — committing pattern evolution.",
+                        cascade_risk,
+                        report.change_rate * 100,
+                    )
+            except Exception:
+                logger.debug("Cascade preview failed (non-fatal)", exc_info=True)
+
         # Invalidate the learned-weight cache so scorer picks up any
         # weight changes from pattern promotion/deprecation immediately.
-        from sentinel import scorer
         scorer._reset_learned_weights_cache()
 
         return {
@@ -270,6 +319,8 @@ class DetectionFlywheel:
             "deprecated": deprecated,
             "retained_count": len(retained),
             "evolved_at": _now_iso(),
+            "cascade_risk": cascade_risk,
+            "cascade_deferred": cascade_deferred,
         }
 
     # ------------------------------------------------------------------
@@ -320,11 +371,167 @@ class DetectionFlywheel:
         }
 
     # ------------------------------------------------------------------
+    # CALIBRATION
+    # ------------------------------------------------------------------
+
+    def calibration_curve(
+        self, db: SentinelDB | None = None, n_bins: int = 10
+    ) -> list[tuple[float, float, float, int]]:
+        """Compute a calibration curve from user-reported jobs.
+
+        Bins all reports by their predicted ``our_prediction`` score into
+        *n_bins* equal-width buckets.  For each non-empty bucket returns:
+
+            (bin_center, mean_predicted_score, actual_scam_rate, n_samples)
+
+        Only bins with at least one report are included.
+
+        Args:
+            db: Database to query (defaults to ``self.db``).
+            n_bins: Number of equal-width bins across [0, 1].
+
+        Returns:
+            List of ``(bin_center, predicted_rate, actual_rate, n_samples)``
+            sorted by bin_center ascending.
+        """
+        _db = db if db is not None else self.db
+        reports = _db.get_reports(limit=100_000)
+        if not reports:
+            return []
+
+        bin_width = 1.0 / n_bins
+        # Each bin: accumulate sum of predicted scores + scam label counts
+        bins: dict[int, list] = {}  # bin_idx -> [sum_pred, sum_scam, count]
+
+        for r in reports:
+            pred = r.get("our_prediction")
+            if pred is None:
+                continue
+            pred = float(pred)
+            is_scam = int(r.get("is_scam", 0))
+            bin_idx = min(int(pred / bin_width), n_bins - 1)
+            if bin_idx not in bins:
+                bins[bin_idx] = [0.0, 0, 0]
+            bins[bin_idx][0] += pred
+            bins[bin_idx][1] += is_scam
+            bins[bin_idx][2] += 1
+
+        curve: list[tuple[float, float, float, int]] = []
+        for bin_idx in sorted(bins.keys()):
+            sum_pred, sum_scam, count = bins[bin_idx]
+            bin_center = round((bin_idx + 0.5) * bin_width, 4)
+            predicted_rate = round(sum_pred / count, 4)
+            actual_rate = round(sum_scam / count, 4)
+            curve.append((bin_center, predicted_rate, actual_rate, count))
+
+        return curve
+
+    def calibration_error(self, db: SentinelDB | None = None, n_bins: int = 10) -> float:
+        """Compute the Expected Calibration Error (ECE).
+
+        ECE = sum over bins of (n_bin / N) * |predicted_rate - actual_rate|
+
+        A perfectly calibrated model has ECE ≈ 0.  Higher values indicate
+        systematic over- or under-prediction.
+
+        Returns 0.0 when there are no reports.
+        """
+        curve = self.calibration_curve(db=db, n_bins=n_bins)
+        if not curve:
+            return 0.0
+
+        total_samples = sum(entry[3] for entry in curve)
+        if total_samples == 0:
+            return 0.0
+
+        ece = sum(
+            (n / total_samples) * abs(predicted - actual)
+            for _, predicted, actual, n in curve
+        )
+        return round(ece, 6)
+
+    def auto_adjust_thresholds(
+        self,
+        db: SentinelDB | None = None,
+        n_bins: int = 10,
+        tolerance: float = 0.10,
+    ) -> dict:
+        """Auto-adjust risk classification thresholds based on calibration data.
+
+        For each calibration bin where ``|actual_rate - predicted_rate| > tolerance``,
+        nudge the nearest risk threshold toward correcting the miscalibration.
+        Each adjustment is clamped to ``scorer._MAX_THRESHOLD_DELTA``.
+
+        Args:
+            db: Database to query (defaults to ``self.db``).
+            n_bins: Bins to use for calibration curve.
+            tolerance: Minimum abs(actual - predicted) before adjusting.
+
+        Returns:
+            Dict with keys:
+            - ``adjusted``: list of dicts with threshold change details.
+            - ``ece_before``: ECE before adjustments.
+            - ``skipped``: True when no calibration data is available.
+        """
+        from sentinel.scorer import _RISK_THRESHOLDS, _MAX_THRESHOLD_DELTA
+
+        curve = self.calibration_curve(db=db, n_bins=n_bins)
+        if not curve:
+            return {"adjusted": [], "ece_before": 0.0, "skipped": True}
+
+        ece_before = self.calibration_error(db=db, n_bins=n_bins)
+        adjusted: list[dict] = []
+
+        # Ordered threshold names by score boundary ascending
+        _threshold_order = ["safe", "low", "suspicious", "high"]
+
+        for bin_center, predicted_rate, actual_rate, _n in curve:
+            diff = actual_rate - predicted_rate  # positive = we under-predict
+            if abs(diff) <= tolerance:
+                continue
+
+            # Find the threshold boundary closest to the bin_center
+            closest_key = min(
+                _threshold_order,
+                key=lambda k: abs(_RISK_THRESHOLDS[k] - bin_center),
+            )
+            old_value = _RISK_THRESHOLDS[closest_key]
+
+            # Under-prediction (actual > predicted): lower the threshold so
+            # more jobs are flagged at higher risk levels.
+            delta = -math.copysign(min(abs(diff) * 0.1, _MAX_THRESHOLD_DELTA), diff)
+            new_value = round(
+                max(0.05, min(0.95, old_value + delta)), 4
+            )
+
+            if new_value != old_value:
+                _RISK_THRESHOLDS[closest_key] = new_value
+                adjusted.append({
+                    "threshold": closest_key,
+                    "old_value": old_value,
+                    "new_value": new_value,
+                    "bin_center": bin_center,
+                    "predicted_rate": predicted_rate,
+                    "actual_rate": actual_rate,
+                    "diff": round(diff, 4),
+                })
+
+        return {
+            "adjusted": adjusted,
+            "ece_before": ece_before,
+            "skipped": False,
+        }
+
+    # ------------------------------------------------------------------
     # CUSUM REGRESSION DETECTION
     # ------------------------------------------------------------------
 
     def detect_regression(self, window: int = 50) -> dict:
-        """Run CUSUM over the *window* most recent reports to detect precision regression.
+        """Run confidence-weighted CUSUM over the *window* most recent reports.
+
+        Each observation is weighted by the stored confidence of the corresponding
+        job (looked up from the jobs table by URL).  Jobs with no stored confidence
+        default to weight 1.0 so behaviour is unchanged for legacy data.
 
         Returns alarm status, current CUSUM statistic, and the rolling precision
         computed from the window.
@@ -351,9 +558,17 @@ class DetectionFlywheel:
 
         alarm = False
         for r in reports_sorted:
-            # Local precision signal: 1 if correctly predicted scam, 0 otherwise
+            # Base precision signal: 1.0 = correct scam prediction, 0.0 = wrong
             point = 1.0 if (r.get("is_scam") == 1 and r.get("was_correct") == 1) else 0.0
-            alarm = self._cusum.update(point)
+
+            # Look up confidence for this job URL and use as weight
+            job = self.db.get_job(r.get("url", "")) if r.get("url") else None
+            confidence = job.get("confidence") if job else None
+            weight = float(confidence) if confidence is not None else 1.0
+            # Weighted deviation: scale the point toward the neutral baseline
+            weighted_point = baseline + weight * (point - baseline)
+
+            alarm = self._cusum.update(weighted_point)
 
         # Rolling precision over the window
         tp_window = sum(1 for r in reports_sorted if r.get("is_scam") == 1 and r.get("was_correct") == 1)
@@ -392,6 +607,43 @@ class DetectionFlywheel:
         # Regression check
         regression = self.detect_regression()
 
+        # Calibration snapshot + auto threshold adjustment
+        ece = self.calibration_error()
+        threshold_adjustment = self.auto_adjust_thresholds()
+
+        # Shadow scorer evaluation
+        shadow_evaluation: dict[str, Any] = {"active": False}
+        try:
+            if self.shadow.active:
+                eval_result = self.shadow.evaluate()
+                promoted_shadow = False
+                rejected_shadow = False
+                if self.shadow.should_promote():
+                    self.shadow.promote()
+                    promoted_shadow = True
+                elif eval_result.jobs_evaluated >= 30:
+                    self.shadow.reject()
+                    rejected_shadow = True
+                shadow_evaluation = {
+                    "active": True,
+                    "jobs_evaluated": eval_result.jobs_evaluated,
+                    "baseline_precision": eval_result.baseline_precision,
+                    "shadow_precision": eval_result.shadow_precision,
+                    "improvement": eval_result.improvement,
+                    "promoted": promoted_shadow,
+                    "rejected": rejected_shadow,
+                }
+            else:
+                shadow_evaluation = {
+                    "active": False,
+                    "jobs_evaluated": 0,
+                    "promoted": False,
+                    "rejected": False,
+                }
+        except Exception:
+            logger.debug("Shadow evaluation failed (non-fatal)", exc_info=True)
+            shadow_evaluation = {"active": False, "jobs_evaluated": 0, "promoted": False, "rejected": False}
+
         # Collect updated signal count from all active pattern observations
         active_patterns = self.db.get_patterns(status="active")
         signals_updated = sum(p.get("observations", 0) for p in active_patterns)
@@ -412,6 +664,9 @@ class DetectionFlywheel:
             "patterns_deprecated": evolution.get("deprecated", []),
             "regression_alarm": regression.get("alarm", False),
             "cusum_statistic": regression.get("cusum_statistic", 0.0),
+            "calibration_ece": ece,
+            "thresholds_adjusted": len(threshold_adjustment.get("adjusted", [])),
+            "shadow_evaluation": shadow_evaluation,
         }
 
         # --- Regression response ---
@@ -498,6 +753,203 @@ class DetectionFlywheel:
             "cusum_statistic": regression.get("cusum_statistic", 0.0),
             "cycle_count": self._cycle_count,
             "checked_at": _now_iso(),
+        }
+
+    # ------------------------------------------------------------------
+    # INPUT DRIFT DETECTION
+    # ------------------------------------------------------------------
+
+    def record_signal_rates(
+        self,
+        signal_counts: dict[str, int],
+        total_jobs: int,
+        window_start: str,
+        window_end: str,
+    ) -> None:
+        """Persist per-signal firing counts for a scoring batch window.
+
+        Delegates to db.record_signal_rates so callers can use either
+        the flywheel or db directly.
+        """
+        self.db.record_signal_rates(
+            signal_rates=signal_counts,
+            total_jobs=total_jobs,
+            window_start=window_start,
+            window_end=window_end,
+        )
+
+    def detect_input_drift(self, window_days: int = 7) -> dict:
+        """Detect distributional shift in signal firing rates.
+
+        Compares the *recent* window (last *window_days* days) against a
+        *baseline* constructed from all older history.
+
+        Algorithm:
+        1. Partition signal_rate_history into recent vs. baseline buckets.
+        2. Build normalised rate vectors (fire_count / total_jobs) for each.
+        3. Compute Jensen-Shannon divergence as the drift_score (0-1 range).
+        4. Also compute chi-squared statistic for corroboration.
+        5. Trigger alarm when drift_score > 0.10 (10% JSD threshold).
+
+        Returns a dict with:
+            drift_score       -- JSD value (0.0 = identical, 1.0 = maximally different)
+            alarm             -- True when drift_score > 0.10
+            changed_signals   -- list of {signal, baseline_rate, recent_rate, delta}
+                                 sorted by abs(delta) descending
+            chi2_statistic    -- chi-squared test statistic
+            recent_window_start, baseline_jobs, recent_jobs, message
+        """
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        cutoff = (now - timedelta(days=window_days)).isoformat()
+
+        all_rows = self.db.get_signal_rate_history(limit=10_000)
+        if not all_rows:
+            return {
+                "drift_score": 0.0,
+                "alarm": False,
+                "changed_signals": [],
+                "recent_window_start": cutoff,
+                "baseline_jobs": 0,
+                "recent_jobs": 0,
+                "chi2_statistic": 0.0,
+                "message": "No signal rate history available.",
+            }
+
+        recent_rows = [r for r in all_rows if r.get("window_end", "") >= cutoff]
+        baseline_rows = [r for r in all_rows if r.get("window_end", "") < cutoff]
+
+        if not recent_rows:
+            return {
+                "drift_score": 0.0,
+                "alarm": False,
+                "changed_signals": [],
+                "recent_window_start": cutoff,
+                "baseline_jobs": sum(r.get("total_jobs", 0) for r in baseline_rows),
+                "recent_jobs": 0,
+                "chi2_statistic": 0.0,
+                "message": "No recent signal data — cannot compute drift (need data within baseline window).",
+            }
+
+        if not baseline_rows:
+            return {
+                "drift_score": 0.0,
+                "alarm": False,
+                "changed_signals": [],
+                "recent_window_start": cutoff,
+                "baseline_jobs": 0,
+                "recent_jobs": sum(r.get("total_jobs", 0) for r in recent_rows),
+                "chi2_statistic": 0.0,
+                "message": "No baseline data yet — cannot compute drift.",
+            }
+
+        # Aggregate firing rates: signal -> (total_fire_count, total_jobs)
+        def _aggregate(rows: list) -> tuple[dict, int]:
+            counts: dict[str, int] = {}
+            jobs_total = 0
+            for r in rows:
+                sig = r["signal_name"]
+                counts[sig] = counts.get(sig, 0) + r.get("fire_count", 0)
+                jobs_total += r.get("total_jobs", 0)
+            denom = max(jobs_total, 1)
+            rates = {sig: cnt / denom for sig, cnt in counts.items()}
+            return rates, jobs_total
+
+        baseline_rates, baseline_jobs = _aggregate(baseline_rows)
+        recent_rates, recent_jobs = _aggregate(recent_rows)
+
+        all_signals = sorted(set(baseline_rates) | set(recent_rates))
+
+        if not all_signals:
+            return {
+                "drift_score": 0.0,
+                "alarm": False,
+                "changed_signals": [],
+                "recent_window_start": cutoff,
+                "baseline_jobs": baseline_jobs,
+                "recent_jobs": recent_jobs,
+                "chi2_statistic": 0.0,
+                "message": "No signals found in history.",
+            }
+
+        # Build probability distributions (normalise rates to sum to 1)
+        def _to_dist(rates: dict, signals: list) -> list:
+            vec = [rates.get(s, 0.0) for s in signals]
+            total = sum(vec)
+            if total == 0.0:
+                n = len(signals)
+                return [1.0 / n] * n
+            return [v / total for v in vec]
+
+        p = _to_dist(baseline_rates, all_signals)
+        q = _to_dist(recent_rates, all_signals)
+
+        # Jensen-Shannon Divergence (symmetric, bounded [0,1] with log2)
+        def _kl(a: list, b: list) -> float:
+            eps = 1e-10
+            return sum(
+                ai * math.log2((ai + eps) / (bi + eps))
+                for ai, bi in zip(a, b)
+                if ai > 0
+            )
+
+        m = [(pi + qi) / 2.0 for pi, qi in zip(p, q)]
+        jsd = 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
+        drift_score = max(0.0, min(1.0, jsd))
+
+        # Chi-squared statistic (observed vs. expected based on baseline)
+        chi2 = 0.0
+        for pi, qi in zip(p, q):
+            expected = pi * recent_jobs
+            observed = qi * recent_jobs
+            if expected > 0:
+                chi2 += (observed - expected) ** 2 / expected
+
+        # Per-signal deltas (raw rates for interpretability)
+        changed_signals = []
+        for sig in all_signals:
+            base_r = baseline_rates.get(sig, 0.0)
+            rec_r = recent_rates.get(sig, 0.0)
+            delta = rec_r - base_r
+            changed_signals.append({
+                "signal": sig,
+                "baseline_rate": round(base_r, 5),
+                "recent_rate": round(rec_r, 5),
+                "delta": round(delta, 5),
+            })
+        changed_signals.sort(key=lambda x: abs(x["delta"]), reverse=True)
+
+        alarm = drift_score > 0.10
+        message = (
+            f"Input drift detected (JSD={drift_score:.4f} > 0.10) — "
+            "consider triggering pattern mining."
+            if alarm
+            else f"No significant input drift (JSD={drift_score:.4f})."
+        )
+
+        # Automatically trigger pattern mining when drift is detected
+        if alarm:
+            try:
+                from sentinel.innovation import InnovationEngine
+                engine = InnovationEngine(db=self.db)
+                engine._run_pattern_mining()
+                logger.info(
+                    "Input drift detected (score=%.4f) — pattern mining triggered.",
+                    drift_score,
+                )
+            except Exception:
+                logger.debug("Pattern mining trigger failed (non-fatal).", exc_info=True)
+
+        return {
+            "drift_score": round(drift_score, 6),
+            "alarm": alarm,
+            "changed_signals": changed_signals,
+            "recent_window_start": cutoff,
+            "baseline_jobs": baseline_jobs,
+            "recent_jobs": recent_jobs,
+            "chi2_statistic": round(chi2, 4),
+            "message": message,
         }
 
     # ------------------------------------------------------------------

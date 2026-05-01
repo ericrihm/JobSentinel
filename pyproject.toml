@@ -9,7 +9,7 @@ description = "AI-powered LinkedIn job scam detection and validation platform"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
-    {name = "Eric Rihm", email = "eric@cobaltsystems.io"},
+    {name = "Eric Rihm", email = "ericrihm@gmail.com"},
 ]
 dependencies = [
 "click>=8.1",

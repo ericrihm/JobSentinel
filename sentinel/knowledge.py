@@ -7,6 +7,7 @@ import logging
 from datetime import UTC, datetime
 
 from sentinel.db import SentinelDB
+from sentinel.faik_patterns import FAIK_PATTERNS
 from sentinel.models import ScamPattern, SignalCategory
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,8 @@ _DEFAULT_PATTERNS: list[dict] = [
         "regex": r"(?i)(hired\s+immediately|no\s+interview\s+(required|needed)|instant(ly)?\s+(hired|approved)|you('re|re|are)\s+(already\s+)?hired)",  # noqa: E501
         "keywords": ["hired immediately", "no interview required", "instantly hired", "you're already hired"],
     },
+    # FAIK-derived patterns (Perry Carpenter, 2024) — AI/deepfake threat model
+    *FAIK_PATTERNS,
 ]
 
 

@@ -131,6 +131,12 @@ class IngestionPipeline:
         # 4. Score each new job via analyzer
         jobs_scored = 0
         high_risk_count = 0
+
+        # Per-source accumulators for source_stats
+        source_jobs: dict[str, int] = {}
+        source_scams: dict[str, int] = {}
+        source_scores: dict[str, list[float]] = {}
+
         for job in new_jobs:
             try:
                 from sentinel.analyzer import analyze_job
@@ -160,13 +166,33 @@ class IngestionPipeline:
                 self.db.save_job(job_data)
                 jobs_scored += 1
 
+                # Accumulate per-source metrics
+                src = job.source or "unknown"
+                source_jobs[src] = source_jobs.get(src, 0) + 1
                 if result.scam_score >= 0.6:
                     high_risk_count += 1
+                    source_scams[src] = source_scams.get(src, 0) + 1
+                source_scores.setdefault(src, []).append(result.scam_score)
 
             except Exception as exc:
                 msg = f"Scoring failed for '{job.title or job.url}': {exc}"
                 logger.warning(msg)
                 errors.append(msg)
+
+        # 5b. Flush per-source stats to DB
+        for src, count in source_jobs.items():
+            scams = source_scams.get(src, 0)
+            scores = source_scores.get(src, [])
+            avg = sum(scores) / len(scores) if scores else 0.0
+            try:
+                self.db.upsert_source_stats(
+                    source=src,
+                    jobs_ingested=count,
+                    scams_detected=scams,
+                    avg_score=round(avg, 4),
+                )
+            except Exception as exc:
+                logger.warning("Failed to update source_stats for %s: %s", src, exc)
 
         completed_at = _now_iso()
 

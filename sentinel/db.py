@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     salary_min REAL,
     salary_max REAL,
     scam_score REAL,
+    confidence REAL,
     risk_level TEXT,
     analyzed_at TEXT,
     signal_count INTEGER DEFAULT 0,
@@ -106,6 +107,172 @@ CREATE TABLE IF NOT EXISTS flywheel_metrics (
     patterns_promoted INTEGER DEFAULT 0,
     patterns_deprecated INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS source_stats (
+    source TEXT PRIMARY KEY,
+    jobs_ingested INT DEFAULT 0,
+    scams_detected INT DEFAULT 0,
+    avg_score REAL DEFAULT 0.0,
+    last_updated TEXT
+);
+
+CREATE TABLE IF NOT EXISTS signal_rate_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_name TEXT NOT NULL,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    fire_count INTEGER DEFAULT 0,
+    total_jobs INTEGER DEFAULT 0,
+    recorded_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS shadow_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_weights TEXT NOT NULL DEFAULT '{}',
+    status TEXT DEFAULT 'active',
+    baseline_precision REAL DEFAULT 0.0,
+    shadow_precision REAL DEFAULT 0.0,
+    jobs_evaluated INTEGER DEFAULT 0,
+    promoted INTEGER DEFAULT 0,
+    started_at TEXT,
+    completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS salary_benchmarks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    level TEXT NOT NULL,
+    p25 INTEGER NOT NULL,
+    p50 INTEGER NOT NULL,
+    p75 INTEGER NOT NULL,
+    p90 INTEGER NOT NULL,
+    UNIQUE(category, level)
+);
+
+CREATE TABLE IF NOT EXISTS scam_entities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    domain TEXT,
+    type TEXT,
+    source TEXT,
+    added_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS posting_velocity (
+    company_name TEXT PRIMARY KEY,
+    postings_24h INTEGER DEFAULT 0,
+    postings_7d INTEGER DEFAULT 0,
+    last_updated TEXT
+);
+
+CREATE TABLE IF NOT EXISTS description_hashes (
+    hash TEXT NOT NULL,
+    company_name TEXT NOT NULL,
+    job_url TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    PRIMARY KEY (hash, company_name)
+);
+
+CREATE TABLE IF NOT EXISTS near_misses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_name TEXT NOT NULL,
+    partial_match TEXT NOT NULL,
+    job_url TEXT NOT NULL DEFAULT '',
+    timestamp TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS signal_decay_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signal_name TEXT NOT NULL,
+    window_start TEXT NOT NULL,
+    fire_rate REAL NOT NULL DEFAULT 0.0,
+    recorded_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS research_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic TEXT,
+    prompt TEXT,
+    response_summary TEXT,
+    patterns_extracted INTEGER DEFAULT 0,
+    patterns_adopted INTEGER DEFAULT 0,
+    precision_delta REAL DEFAULT 0.0,
+    timestamp TEXT
+);
+
+CREATE TABLE IF NOT EXISTS research_topics (
+    topic TEXT PRIMARY KEY,
+    priority REAL DEFAULT 0.5,
+    last_researched TEXT,
+    total_patterns_found INTEGER DEFAULT 0,
+    avg_precision_impact REAL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS ensemble_method_accuracy (
+    method_name TEXT PRIMARY KEY,
+    alpha REAL DEFAULT 1.0,
+    beta REAL DEFAULT 1.0,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS feedback_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    is_scam INTEGER NOT NULL,
+    our_prediction REAL,
+    source TEXT DEFAULT 'manual',
+    reason TEXT DEFAULT '',
+    was_correct INTEGER,
+    reported_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cascade_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger TEXT NOT NULL,
+    change_type TEXT NOT NULL DEFAULT '',
+    impact_json TEXT NOT NULL DEFAULT '{}',
+    timestamp TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS flywheel_mesh_edges (
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    edge_type TEXT NOT NULL DEFAULT 'data',
+    weight REAL NOT NULL DEFAULT 1.0,
+    PRIMARY KEY (source, target)
+);
+
+CREATE TABLE IF NOT EXISTS cortex_state (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_number INTEGER NOT NULL,
+    state_json TEXT NOT NULL DEFAULT '{}',
+    learning_velocity REAL DEFAULT 0.0,
+    health_grade TEXT DEFAULT 'C',
+    strategic_mode TEXT DEFAULT 'OBSERVE',
+    timestamp TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cortex_investigations (
+    id TEXT PRIMARY KEY,
+    trigger TEXT NOT NULL,
+    hypothesis TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    actions_json TEXT NOT NULL DEFAULT '[]',
+    opened_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolution TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cortex_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    signal_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    priority REAL DEFAULT 0.5,
+    acted_on INTEGER DEFAULT 0,
+    timestamp TEXT NOT NULL
+);
 """
 
 
@@ -143,10 +310,16 @@ class SentinelDB:
             "ALTER TABLE flywheel_metrics ADD COLUMN cusum_statistic REAL DEFAULT 0.0",
             "ALTER TABLE flywheel_metrics ADD COLUMN patterns_promoted INTEGER DEFAULT 0",
             "ALTER TABLE flywheel_metrics ADD COLUMN patterns_deprecated INTEGER DEFAULT 0",
+            # Calibration / confidence additions
+            "ALTER TABLE jobs ADD COLUMN confidence REAL",
         ]:
             with contextlib.suppress(sqlite3.OperationalError):
                 self.conn.execute(col_sql)
         self.conn.commit()
+
+        # Seed reference tables (no-ops if already populated)
+        self.seed_salary_benchmarks()
+        self.seed_scam_entities()
 
     # ------------------------------------------------------------------
     # Jobs
@@ -162,12 +335,12 @@ class SentinelDB:
             """
             INSERT INTO jobs
                 (url, title, company, location, description,
-                 salary_min, salary_max, scam_score, risk_level,
+                 salary_min, salary_max, scam_score, confidence, risk_level,
                  analyzed_at, signal_count, signals_json,
                  user_reported, user_verdict)
             VALUES
                 (:url, :title, :company, :location, :description,
-                 :salary_min, :salary_max, :scam_score, :risk_level,
+                 :salary_min, :salary_max, :scam_score, :confidence, :risk_level,
                  :analyzed_at, :signal_count, :signals_json,
                  :user_reported, :user_verdict)
             ON CONFLICT(url) DO UPDATE SET
@@ -178,6 +351,7 @@ class SentinelDB:
                 salary_min    = excluded.salary_min,
                 salary_max    = excluded.salary_max,
                 scam_score    = excluded.scam_score,
+                confidence    = excluded.confidence,
                 risk_level    = excluded.risk_level,
                 analyzed_at   = excluded.analyzed_at,
                 signal_count  = excluded.signal_count,
@@ -194,6 +368,7 @@ class SentinelDB:
                 "salary_min": job_data.get("salary_min", 0.0),
                 "salary_max": job_data.get("salary_max", 0.0),
                 "scam_score": job_data.get("scam_score", 0.0),
+                "confidence": job_data.get("confidence"),
                 "risk_level": job_data.get("risk_level", ""),
                 "analyzed_at": job_data.get("analyzed_at", _now_iso()),
                 "signal_count": job_data.get("signal_count", 0),
@@ -252,6 +427,39 @@ class SentinelDB:
             "SELECT * FROM jobs WHERE url = ?", (url,)
         ).fetchone()
         return _row_to_dict(row)
+
+    def get_jobs_for_review(
+        self,
+        score_threshold: float = 0.5,
+        confidence_threshold: float = 0.4,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return jobs with high scam score but low model confidence — need human review.
+
+        Criteria: scam_score > score_threshold AND confidence < confidence_threshold
+        AND confidence IS NOT NULL.
+        Results are ordered by scam_score descending (highest risk first).
+        """
+        rows = self.conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE scam_score > ?
+              AND confidence IS NOT NULL
+              AND confidence < ?
+            ORDER BY scam_score DESC
+            LIMIT ?
+            """,
+            (score_threshold, confidence_threshold, limit),
+        ).fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["signals"] = json.loads(d.get("signals_json") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                d["signals"] = []
+            results.append(d)
+        return results
 
     # ------------------------------------------------------------------
     # Ingestion runs
@@ -591,6 +799,869 @@ class SentinelDB:
             "avg_scam_score": avg_score,
             "last_flywheel_cycle": last_cycle,
         }
+
+    # ------------------------------------------------------------------
+    # Source quality stats
+    # ------------------------------------------------------------------
+
+    def upsert_source_stats(
+        self,
+        source: str,
+        jobs_ingested: int = 0,
+        scams_detected: int = 0,
+        avg_score: float = 0.0,
+    ) -> None:
+        """Insert or update source stats, accumulating counts and refreshing avg_score."""
+        self.conn.execute(
+            """
+            INSERT INTO source_stats (source, jobs_ingested, scams_detected, avg_score, last_updated)
+            VALUES (:source, :jobs_ingested, :scams_detected, :avg_score, :last_updated)
+            ON CONFLICT(source) DO UPDATE SET
+                jobs_ingested  = source_stats.jobs_ingested + excluded.jobs_ingested,
+                scams_detected = source_stats.scams_detected + excluded.scams_detected,
+                avg_score      = excluded.avg_score,
+                last_updated   = excluded.last_updated
+            """,
+            {
+                "source": source,
+                "jobs_ingested": jobs_ingested,
+                "scams_detected": scams_detected,
+                "avg_score": avg_score,
+                "last_updated": _now_iso(),
+            },
+        )
+        self.conn.commit()
+
+    def get_source_stats(self) -> list[dict]:
+        """Return all source stats rows, ordered by jobs_ingested descending."""
+        rows = self.conn.execute(
+            "SELECT * FROM source_stats ORDER BY jobs_ingested DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_best_sources(self, n: int = 5) -> list[str]:
+        """Return the top-n source names ranked by scam yield rate (scams_detected / jobs_ingested).
+
+        Sources with zero jobs_ingested are excluded.
+        """
+        rows = self.conn.execute(
+            """
+            SELECT source,
+                   CAST(scams_detected AS REAL) / jobs_ingested AS yield_rate
+            FROM source_stats
+            WHERE jobs_ingested > 0
+            ORDER BY yield_rate DESC
+            LIMIT ?
+            """,
+            (n,),
+        ).fetchall()
+        return [row["source"] for row in rows]
+
+    # ------------------------------------------------------------------
+    # Signal rate history (input drift detection)
+    # ------------------------------------------------------------------
+
+    def record_signal_rates(
+        self,
+        signal_rates: dict[str, int],
+        total_jobs: int,
+        window_start: str,
+        window_end: str,
+    ) -> None:
+        """Insert one row per signal into signal_rate_history for the given window.
+
+        *signal_rates* maps signal_name -> fire_count.
+        """
+        now = _now_iso()
+        for signal_name, fire_count in signal_rates.items():
+            self.conn.execute(
+                """
+                INSERT INTO signal_rate_history
+                    (signal_name, window_start, window_end, fire_count, total_jobs, recorded_at)
+                VALUES
+                    (?, ?, ?, ?, ?, ?)
+                """,
+                (signal_name, window_start, window_end, int(fire_count), int(total_jobs), now),
+            )
+        self.conn.commit()
+
+    def get_signal_rate_history(
+        self,
+        signal_name: str | None = None,
+        since: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict]:
+        """Return signal_rate_history rows, optionally filtered by signal_name and/or since timestamp."""
+        params: list = []
+        conditions: list[str] = []
+
+        if signal_name is not None:
+            conditions.append("signal_name = ?")
+            params.append(signal_name)
+        if since is not None:
+            conditions.append("window_end >= ?")
+            params.append(since)
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        params.append(limit)
+
+        rows = self.conn.execute(
+            f"SELECT * FROM signal_rate_history {where} ORDER BY window_end DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_flywheel_metrics_history(self, days: int = 30, limit: int = 200) -> list[dict]:
+        """Return flywheel_metrics rows from the last *days* days, newest first."""
+        from datetime import UTC, datetime, timedelta
+
+        since = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        rows = self.conn.execute(
+            """
+            SELECT * FROM flywheel_metrics
+            WHERE cycle_ts >= ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (since, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Shadow runs (A/B weight testing)
+    # ------------------------------------------------------------------
+
+    def insert_shadow_run(self, candidate_weights: dict) -> int:
+        """Insert a new shadow run record and return its id."""
+        cursor = self.conn.execute(
+            """
+            INSERT INTO shadow_runs
+                (candidate_weights, status, started_at)
+            VALUES
+                (?, 'active', ?)
+            """,
+            (json.dumps(candidate_weights), _now_iso()),
+        )
+        self.conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_active_shadow_run(self) -> dict | None:
+        """Return the most recent active shadow run, or None if none exists."""
+        row = self.conn.execute(
+            "SELECT * FROM shadow_runs WHERE status = 'active' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        try:
+            d["candidate_weights"] = json.loads(d.get("candidate_weights") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            d["candidate_weights"] = {}
+        return d
+
+    def update_shadow_run(self, run_id: int, updates: dict) -> None:
+        """Update fields on a shadow run record."""
+        allowed = {
+            "baseline_precision", "shadow_precision", "jobs_evaluated",
+            "status", "promoted", "completed_at",
+        }
+        sets = []
+        params = []
+        for key, val in updates.items():
+            if key in allowed:
+                sets.append(f"{key} = ?")
+                params.append(val)
+        if not sets:
+            return
+        params.append(run_id)
+        self.conn.execute(
+            f"UPDATE shadow_runs SET {', '.join(sets)} WHERE id = ?",
+            params,
+        )
+        self.conn.commit()
+
+    def promote_shadow_run(self, run_id: int) -> None:
+        """Mark a shadow run as promoted."""
+        self.conn.execute(
+            "UPDATE shadow_runs SET status = 'promoted', promoted = 1, completed_at = ? WHERE id = ?",
+            (_now_iso(), run_id),
+        )
+        self.conn.commit()
+
+    def reject_shadow_run(self, run_id: int) -> None:
+        """Mark a shadow run as rejected."""
+        self.conn.execute(
+            "UPDATE shadow_runs SET status = 'rejected', completed_at = ? WHERE id = ?",
+            (_now_iso(), run_id),
+        )
+        self.conn.commit()
+
+    def get_shadow_history(self, limit: int = 20) -> list[dict]:
+        """Return shadow run history, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM shadow_runs ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["candidate_weights"] = json.loads(d.get("candidate_weights") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                d["candidate_weights"] = {}
+            results.append(d)
+        return results
+
+    # ------------------------------------------------------------------
+    # Salary benchmarks
+    # ------------------------------------------------------------------
+
+    _SALARY_SEED: list[tuple[str, str, int, int, int, int]] = [
+        # (category, level, p25, p50, p75, p90)
+        # Software Engineering
+        ("software_engineer", "entry", 75_000, 90_000, 110_000, 130_000),
+        ("software_engineer", "mid",   105_000, 130_000, 160_000, 195_000),
+        ("software_engineer", "senior", 150_000, 180_000, 220_000, 270_000),
+        # Data / Analytics
+        ("data_analyst", "entry",  55_000,  68_000,  85_000, 100_000),
+        ("data_analyst", "mid",    75_000,  95_000, 115_000, 140_000),
+        ("data_analyst", "senior", 105_000, 130_000, 155_000, 185_000),
+        # Data Science / ML
+        ("data_scientist", "entry",  80_000,  98_000, 120_000, 145_000),
+        ("data_scientist", "mid",   110_000, 140_000, 170_000, 210_000),
+        ("data_scientist", "senior", 150_000, 185_000, 225_000, 275_000),
+        # Customer Service
+        ("customer_service", "entry",  30_000, 38_000,  48_000,  58_000),
+        ("customer_service", "mid",    38_000, 48_000,  60_000,  72_000),
+        ("customer_service", "senior", 50_000, 62_000,  78_000,  95_000),
+        # Administrative Assistant
+        ("admin_assistant", "entry",  32_000, 40_000,  50_000,  60_000),
+        ("admin_assistant", "mid",    42_000, 52_000,  64_000,  76_000),
+        ("admin_assistant", "senior", 55_000, 68_000,  82_000,  98_000),
+        # Marketing
+        ("marketing", "entry",  40_000,  50_000,  63_000,  78_000),
+        ("marketing", "mid",    60_000,  75_000,  95_000, 115_000),
+        ("marketing", "senior", 90_000, 115_000, 145_000, 175_000),
+        # Sales
+        ("sales", "entry",  35_000,  45_000,  58_000,  75_000),
+        ("sales", "mid",    55_000,  72_000,  92_000, 120_000),
+        ("sales", "senior", 80_000, 105_000, 140_000, 180_000),
+        # Nursing / Healthcare
+        ("nursing", "entry",  55_000, 65_000,  78_000,  92_000),
+        ("nursing", "mid",    68_000, 82_000,  98_000, 115_000),
+        ("nursing", "senior", 85_000, 102_000, 122_000, 145_000),
+        # Accounting / Finance
+        ("accounting", "entry",  45_000, 55_000,  68_000,  82_000),
+        ("accounting", "mid",    65_000, 82_000, 100_000, 120_000),
+        ("accounting", "senior", 90_000, 115_000, 142_000, 170_000),
+        # Project Manager
+        ("project_manager", "entry",  50_000,  63_000,  78_000,  95_000),
+        ("project_manager", "mid",    75_000,  95_000, 118_000, 140_000),
+        ("project_manager", "senior", 100_000, 128_000, 158_000, 190_000),
+        # Human Resources
+        ("human_resources", "entry",  40_000, 50_000,  62_000,  75_000),
+        ("human_resources", "mid",    58_000, 72_000,  90_000, 108_000),
+        ("human_resources", "senior", 80_000, 100_000, 125_000, 150_000),
+        # Graphic Designer
+        ("graphic_designer", "entry",  38_000, 47_000,  58_000,  72_000),
+        ("graphic_designer", "mid",    52_000, 65_000,  80_000,  98_000),
+        ("graphic_designer", "senior", 72_000, 90_000, 112_000, 135_000),
+        # Teacher / Education
+        ("teacher", "entry",  35_000, 43_000,  52_000,  62_000),
+        ("teacher", "mid",    45_000, 56_000,  68_000,  80_000),
+        ("teacher", "senior", 58_000, 72_000,  88_000, 105_000),
+        # Warehouse / Logistics
+        ("warehouse", "entry",  28_000, 35_000,  44_000,  54_000),
+        ("warehouse", "mid",    38_000, 47_000,  58_000,  70_000),
+        ("warehouse", "senior", 50_000, 62_000,  76_000,  92_000),
+        # Legal
+        ("legal", "entry",  55_000,  70_000,  90_000, 115_000),
+        ("legal", "mid",    90_000, 120_000, 155_000, 200_000),
+        ("legal", "senior", 140_000, 185_000, 240_000, 310_000),
+    ]
+
+    _SCAM_ENTITY_SEED: list[tuple[str, str, str, str]] = [
+        # (name, domain, type, source)
+        # Generic fake company names
+        ("Global Solutions LLC", "", "fake_company", "sentinel_seed"),
+        ("Apex Digital Services", "", "fake_company", "sentinel_seed"),
+        ("Premier Staffing Group", "", "fake_company", "sentinel_seed"),
+        ("Elite Workforce Solutions", "", "fake_company", "sentinel_seed"),
+        ("National Career Opportunities", "", "fake_company", "sentinel_seed"),
+        ("United Business Services", "", "fake_company", "sentinel_seed"),
+        ("Dynamic Growth Partners", "", "fake_company", "sentinel_seed"),
+        ("Synergy Global Enterprises", "", "fake_company", "sentinel_seed"),
+        ("ProStaff Unlimited", "", "fake_company", "sentinel_seed"),
+        ("Horizon Consulting Group", "", "fake_company", "sentinel_seed"),
+        ("Infinity Talent Solutions", "", "fake_company", "sentinel_seed"),
+        ("Alpha Workforce International", "", "fake_company", "sentinel_seed"),
+        ("Nexus Employment Services", "", "fake_company", "sentinel_seed"),
+        ("Summit Career Associates", "", "fake_company", "sentinel_seed"),
+        ("Pinnacle Staffing Solutions", "", "fake_company", "sentinel_seed"),
+        # Known typosquat / scam domains
+        ("", "amazon-jobs.net", "typosquat_domain", "sentinel_seed"),
+        ("", "amazon-hiring.com", "typosquat_domain", "sentinel_seed"),
+        ("", "google-careers.net", "typosquat_domain", "sentinel_seed"),
+        ("", "meta-jobs.net", "typosquat_domain", "sentinel_seed"),
+        ("", "microsoft-hiring.net", "typosquat_domain", "sentinel_seed"),
+        ("", "apple-jobs.net", "typosquat_domain", "sentinel_seed"),
+        ("", "netflix-careers.net", "typosquat_domain", "sentinel_seed"),
+        ("", "linkedin-jobs.net", "typosquat_domain", "sentinel_seed"),
+        ("", "indeed-jobs.net", "typosquat_domain", "sentinel_seed"),
+        ("", "glassdoor-jobs.net", "typosquat_domain", "sentinel_seed"),
+        # Common fake recruiter/company patterns
+        ("HR Department Team", "", "fake_recruiter", "sentinel_seed"),
+        ("Recruitment Team USA", "", "fake_recruiter", "sentinel_seed"),
+        ("Jobs4You Staffing", "", "fake_recruiter", "sentinel_seed"),
+        ("QuickHire Solutions", "", "fake_recruiter", "sentinel_seed"),
+        ("InstantHire Corp", "", "fake_recruiter", "sentinel_seed"),
+    ]
+
+    def seed_salary_benchmarks(self) -> None:
+        """Seed the salary_benchmarks table with market-rate data if empty."""
+        count = self.conn.execute("SELECT COUNT(*) FROM salary_benchmarks").fetchone()[0]
+        if count > 0:
+            return
+        self.conn.executemany(
+            """
+            INSERT OR IGNORE INTO salary_benchmarks (category, level, p25, p50, p75, p90)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            self._SALARY_SEED,
+        )
+        self.conn.commit()
+
+    def get_salary_benchmark(self, category: str, level: str) -> dict | None:
+        """Return salary benchmark for the given category and level, or None."""
+        row = self.conn.execute(
+            "SELECT * FROM salary_benchmarks WHERE category = ? AND level = ?",
+            (category.lower(), level.lower()),
+        ).fetchone()
+        return _row_to_dict(row)
+
+    def get_all_salary_benchmarks(self) -> list[dict]:
+        """Return all salary benchmark rows."""
+        rows = self.conn.execute(
+            "SELECT * FROM salary_benchmarks ORDER BY category, level"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Scam entities
+    # ------------------------------------------------------------------
+
+    def seed_scam_entities(self) -> None:
+        """Seed the scam_entities table with known patterns if empty."""
+        count = self.conn.execute("SELECT COUNT(*) FROM scam_entities").fetchone()[0]
+        if count > 0:
+            return
+        now = _now_iso()
+        self.conn.executemany(
+            """
+            INSERT INTO scam_entities (name, domain, type, source, added_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [(n, d, t, s, now) for n, d, t, s in self._SCAM_ENTITY_SEED],
+        )
+        self.conn.commit()
+
+    def add_scam_entity(
+        self,
+        name: str = "",
+        domain: str = "",
+        entity_type: str = "fake_company",
+        source: str = "manual",
+    ) -> None:
+        """Add a new scam entity to the database."""
+        self.conn.execute(
+            """
+            INSERT INTO scam_entities (name, domain, type, source, added_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (name.strip(), domain.strip().lower(), entity_type, source, _now_iso()),
+        )
+        self.conn.commit()
+
+    def is_known_scam_entity(self, name: str = "", domain: str = "") -> bool:
+        """Return True if the name or domain matches a known scam entity (exact, case-insensitive)."""
+        if name:
+            row = self.conn.execute(
+                "SELECT 1 FROM scam_entities WHERE lower(name) = lower(?) AND name != ''",
+                (name.strip(),),
+            ).fetchone()
+            if row:
+                return True
+        if domain:
+            row = self.conn.execute(
+                "SELECT 1 FROM scam_entities WHERE lower(domain) = lower(?) AND domain != ''",
+                (domain.strip().lower(),),
+            ).fetchone()
+            if row:
+                return True
+        return False
+
+    def get_scam_entities(self, entity_type: str | None = None) -> list[dict]:
+        """Return all scam entities, optionally filtered by type."""
+        if entity_type:
+            rows = self.conn.execute(
+                "SELECT * FROM scam_entities WHERE type = ? ORDER BY added_at DESC",
+                (entity_type,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM scam_entities ORDER BY added_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Posting velocity
+    # ------------------------------------------------------------------
+
+    def upsert_posting_velocity(
+        self,
+        company_name: str,
+        postings_24h: int,
+        postings_7d: int,
+    ) -> None:
+        """Insert or replace posting velocity stats for a company."""
+        self.conn.execute(
+            """
+            INSERT INTO posting_velocity (company_name, postings_24h, postings_7d, last_updated)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(company_name) DO UPDATE SET
+                postings_24h = excluded.postings_24h,
+                postings_7d  = excluded.postings_7d,
+                last_updated = excluded.last_updated
+            """,
+            (company_name, postings_24h, postings_7d, _now_iso()),
+        )
+        self.conn.commit()
+
+    def get_posting_velocity(self, company_name: str) -> dict | None:
+        """Return posting velocity row for company_name, or None if not tracked."""
+        row = self.conn.execute(
+            "SELECT * FROM posting_velocity WHERE lower(company_name) = lower(?)",
+            (company_name,),
+        ).fetchone()
+        return _row_to_dict(row)
+
+    # ------------------------------------------------------------------
+    # Description hash deduplication
+    # ------------------------------------------------------------------
+
+    def record_description_hash(
+        self,
+        hash_val: str,
+        company_name: str,
+        job_url: str,
+    ) -> None:
+        """Record a description hash for cross-posting dedup.
+
+        Uses INSERT OR IGNORE so re-recording the same (hash, company) is a no-op.
+        """
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO description_hashes (hash, company_name, job_url, first_seen)
+            VALUES (?, ?, ?, ?)
+            """,
+            (hash_val, company_name, job_url, _now_iso()),
+        )
+        self.conn.commit()
+
+    def get_duplicate_description(
+        self,
+        hash_val: str,
+        exclude_company: str = "",
+    ) -> list[dict]:
+        """Return all description_hashes rows matching *hash_val* under a different company.
+
+        If *exclude_company* is empty, all matching rows are returned.
+        """
+        if exclude_company:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM description_hashes
+                WHERE hash = ? AND lower(company_name) != lower(?)
+                """,
+                (hash_val, exclude_company),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM description_hashes WHERE hash = ?",
+                (hash_val,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Near-misses (adversarial evasion tracking)
+    # ------------------------------------------------------------------
+
+    def insert_near_miss(
+        self, signal_name: str, partial_match: str, job_url: str = ""
+    ) -> None:
+        """Record a near-miss evasion observation."""
+        self.conn.execute(
+            """
+            INSERT INTO near_misses (signal_name, partial_match, job_url, timestamp)
+            VALUES (?, ?, ?, ?)
+            """,
+            (signal_name, partial_match, job_url, _now_iso()),
+        )
+        self.conn.commit()
+
+    def get_near_misses(
+        self,
+        signal_name: str | None = None,
+        limit: int = 200,
+    ) -> list[dict]:
+        """Return near-miss rows, optionally filtered by signal_name."""
+        if signal_name is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM near_misses WHERE signal_name = ? ORDER BY timestamp DESC LIMIT ?",
+                (signal_name, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM near_misses ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Signal decay history (evasion rate monitoring)
+    # ------------------------------------------------------------------
+
+    def insert_signal_rate(
+        self, signal_name: str, window_start: str, fire_rate: float
+    ) -> None:
+        """Record a per-signal firing rate snapshot for a time window."""
+        self.conn.execute(
+            """
+            INSERT INTO signal_decay_history (signal_name, window_start, fire_rate, recorded_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (signal_name, window_start, fire_rate, _now_iso()),
+        )
+        self.conn.commit()
+
+    def get_signal_decay(
+        self, signal_name: str | None = None, limit: int = 200
+    ) -> list[dict]:
+        """Return signal_decay_history rows, optionally filtered by signal_name."""
+        if signal_name is not None:
+            rows = self.conn.execute(
+                """
+                SELECT * FROM signal_decay_history
+                WHERE signal_name = ?
+                ORDER BY window_start DESC LIMIT ?
+                """,
+                (signal_name, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM signal_decay_history ORDER BY window_start DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Research history
+    # ------------------------------------------------------------------
+
+    def insert_research_run(self, run: dict) -> None:
+        """Persist a research run record."""
+        self.conn.execute(
+            """
+            INSERT INTO research_history
+                (topic, prompt, response_summary, patterns_extracted,
+                 patterns_adopted, precision_delta, timestamp)
+            VALUES
+                (:topic, :prompt, :response_summary, :patterns_extracted,
+                 :patterns_adopted, :precision_delta, :timestamp)
+            """,
+            {
+                "topic": run.get("topic", ""),
+                "prompt": run.get("prompt", ""),
+                "response_summary": run.get("response_summary", ""),
+                "patterns_extracted": run.get("patterns_extracted", 0),
+                "patterns_adopted": run.get("patterns_adopted", 0),
+                "precision_delta": run.get("precision_delta", 0.0),
+                "timestamp": run.get("timestamp", _now_iso()),
+            },
+        )
+        self.conn.commit()
+
+    def get_research_history(self, limit: int = 50) -> list[dict]:
+        """Return the most recent research runs, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM research_history ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_topic_priority(
+        self,
+        topic: str,
+        priority: float,
+        patterns_found: int = 0,
+        precision_impact: float = 0.0,
+    ) -> None:
+        """Insert or update a research topic's priority and stats."""
+        now = _now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO research_topics
+                (topic, priority, last_researched, total_patterns_found, avg_precision_impact)
+            VALUES
+                (:topic, :priority, :last_researched, :patterns_found, :precision_impact)
+            ON CONFLICT(topic) DO UPDATE SET
+                priority             = excluded.priority,
+                last_researched      = excluded.last_researched,
+                total_patterns_found = research_topics.total_patterns_found + excluded.total_patterns_found,
+                avg_precision_impact = CASE
+                    WHEN research_topics.total_patterns_found > 0
+                    THEN (research_topics.avg_precision_impact * research_topics.total_patterns_found
+                          + excluded.avg_precision_impact)
+                         / (research_topics.total_patterns_found + 1)
+                    ELSE excluded.avg_precision_impact
+                END
+            """,
+            {
+                "topic": topic,
+                "priority": priority,
+                "last_researched": now,
+                "patterns_found": patterns_found,
+                "precision_impact": precision_impact,
+            },
+        )
+        self.conn.commit()
+
+    def get_top_research_topics(self, n: int = 10) -> list[dict]:
+        """Return the top-n research topics by priority, highest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM research_topics ORDER BY priority DESC LIMIT ?",
+            (n,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Cascade events
+    # ------------------------------------------------------------------
+
+    def insert_cascade_event(
+        self,
+        trigger: str,
+        change_type: str,
+        impact_json: str = "{}",
+    ) -> int:
+        """Insert a cascade event record and return its id."""
+        cursor = self.conn.execute(
+            """
+            INSERT INTO cascade_events (trigger, change_type, impact_json, timestamp)
+            VALUES (?, ?, ?, ?)
+            """,
+            (trigger, change_type, impact_json, _now_iso()),
+        )
+        self.conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_cascade_history(self, limit: int = 50) -> list[dict]:
+        """Return the most recent cascade events, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM cascade_events ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["impact"] = json.loads(d.get("impact_json") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                d["impact"] = {}
+            results.append(d)
+        return results
+
+    # ------------------------------------------------------------------
+    # Flywheel mesh edges
+    # ------------------------------------------------------------------
+
+    def upsert_mesh_edge(
+        self,
+        source: str,
+        target: str,
+        edge_type: str = "data",
+        weight: float = 1.0,
+    ) -> None:
+        """Insert or replace a mesh edge record."""
+        self.conn.execute(
+            """
+            INSERT INTO flywheel_mesh_edges (source, target, edge_type, weight)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(source, target) DO UPDATE SET
+                edge_type = excluded.edge_type,
+                weight    = excluded.weight
+            """,
+            (source, target, edge_type, weight),
+        )
+        self.conn.commit()
+
+    def get_mesh_topology(self) -> list[dict]:
+        """Return all mesh edges as a list of dicts."""
+        rows = self.conn.execute(
+            "SELECT * FROM flywheel_mesh_edges ORDER BY source, target"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Jobs sampling (for cascade preview)
+    # ------------------------------------------------------------------
+
+    def get_recent_jobs_for_sampling(self, limit: int = 100) -> list[dict]:
+        """Return recent scored jobs for cascade impact preview."""
+        rows = self.conn.execute(
+            """
+            SELECT url, scam_score, risk_level, signals_json, confidence
+            FROM jobs
+            WHERE scam_score IS NOT NULL
+            ORDER BY analyzed_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Cortex state
+    # ------------------------------------------------------------------
+
+    def save_cortex_state(
+        self,
+        cycle_number: int,
+        state_json: str,
+        learning_velocity: float,
+        health_grade: str,
+        strategic_mode: str,
+    ) -> None:
+        """Persist a cortex state snapshot."""
+        self.conn.execute(
+            """
+            INSERT INTO cortex_state
+                (cycle_number, state_json, learning_velocity, health_grade, strategic_mode, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (cycle_number, state_json, learning_velocity, health_grade, strategic_mode, _now_iso()),
+        )
+        self.conn.commit()
+
+    def get_latest_cortex_state(self) -> dict | None:
+        """Return the most recent cortex state row, or None."""
+        row = self.conn.execute(
+            "SELECT * FROM cortex_state ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return _row_to_dict(row)
+
+    def get_cortex_state_history(self, limit: int = 50) -> list[dict]:
+        """Return cortex state history, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM cortex_state ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Cortex investigations
+    # ------------------------------------------------------------------
+
+    def insert_cortex_investigation(
+        self,
+        id: str,
+        trigger: str,
+        hypothesis: str,
+    ) -> None:
+        """Insert a new cortex investigation."""
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO cortex_investigations
+                (id, trigger, hypothesis, status, actions_json, opened_at)
+            VALUES (?, ?, ?, 'open', '[]', ?)
+            """,
+            (id, trigger, hypothesis, _now_iso()),
+        )
+        self.conn.commit()
+
+    def update_cortex_investigation(self, inv_id: str, updates: dict) -> None:
+        """Update fields on a cortex investigation."""
+        allowed = {"status", "resolution", "resolved_at", "actions_json"}
+        sets = []
+        params = []
+        for key, val in updates.items():
+            if key in allowed:
+                sets.append(f"{key} = ?")
+                params.append(val)
+        if not sets:
+            return
+        params.append(inv_id)
+        self.conn.execute(
+            f"UPDATE cortex_investigations SET {', '.join(sets)} WHERE id = ?",
+            params,
+        )
+        self.conn.commit()
+
+    def get_cortex_investigations(
+        self,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Return cortex investigations, optionally filtered by status."""
+        if status:
+            rows = self.conn.execute(
+                "SELECT * FROM cortex_investigations WHERE status = ? ORDER BY opened_at DESC LIMIT ?",
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM cortex_investigations ORDER BY opened_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Cortex signals
+    # ------------------------------------------------------------------
+
+    def insert_cortex_signal(
+        self,
+        source: str,
+        target: str,
+        signal_type: str,
+        payload: dict,
+        priority: float = 0.5,
+    ) -> None:
+        """Insert a cross-system signal record."""
+        self.conn.execute(
+            """
+            INSERT INTO cortex_signals
+                (source, target, signal_type, payload_json, priority, acted_on, timestamp)
+            VALUES (?, ?, ?, ?, ?, 0, ?)
+            """,
+            (source, target, signal_type, json.dumps(payload), priority, _now_iso()),
+        )
+        self.conn.commit()
+
+    def get_recent_cortex_signals(self, limit: int = 20) -> list[dict]:
+        """Return recent cortex signals, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM cortex_signals ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["payload"] = json.loads(d.get("payload_json") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                d["payload"] = {}
+            results.append(d)
+        return results
 
     # ------------------------------------------------------------------
     # Lifecycle
