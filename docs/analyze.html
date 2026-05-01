@@ -201,6 +201,16 @@
     }
     .sample-btn:hover { background: var(--border); color: var(--text); }
 
+    .paste-hint {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      opacity: 0.7;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: var(--bg-secondary);
+      white-space: nowrap;
+    }
+
     /* Analyze button states */
     #analyzeBtn {
       min-width: 140px;
@@ -449,6 +459,56 @@
       align-self: start;
     }
 
+    .signal-row { cursor: pointer; transition: background 0.15s; }
+    .signal-row:hover { background: var(--bg-hover, rgba(255,255,255,.04)); }
+    .signal-tip-detail {
+      margin-top: 6px;
+      padding: 8px 12px;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      background: var(--bg-secondary, rgba(255,255,255,.04));
+      border-radius: 8px;
+      border-left: 3px solid var(--accent);
+      animation: tipFadeIn 0.2s ease-out;
+    }
+    @keyframes tipFadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .comparison-bar-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .comparison-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .comparison-rows { display: flex; flex-direction: column; gap: 8px; }
+    .comp-row { display: flex; align-items: center; gap: 10px; }
+    .comp-label { font-size: 0.82rem; color: var(--text-secondary); min-width: 90px; }
+    .comp-track {
+      flex: 1;
+      height: 8px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .comp-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s ease-out;
+    }
+    .comp-val { font-size: 0.82rem; font-weight: 600; min-width: 28px; text-align: right; }
+
     .empty-section {
       padding: 14px 18px;
       font-size: .82rem;
@@ -682,6 +742,7 @@
       <li><a href="index.html">Home</a></li>
       <li><a href="index.html#how-it-works">How It Works</a></li>
       <li><a href="index.html#features">Features</a></li>
+          <li><a href="gallery.html">Gallery</a></li>
       <li><a href="demo.html">Demo</a></li>
       <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
       <li><a href="analyze.html" class="nav-cta" aria-current="page">Analyze</a></li>
@@ -772,6 +833,7 @@ Red flags to watch for:
             <button class="sample-btn" onclick="loadSample('scam')" title="Load a scam job posting example">⚠ Scam Example</button>
             <button class="sample-btn" onclick="loadSample('safe')" title="Load a legitimate job posting example">✓ Safe Example</button>
           </div>
+            <span class="paste-hint" title="Paste a job posting anywhere on this page">⌘V anywhere to analyze</span>
         </div>
       </div>
 
@@ -837,6 +899,7 @@ Red flags to watch for:
         <ul>
           <li><a href="index.html#how-it-works">How It Works</a></li>
           <li><a href="index.html#features">Features</a></li>
+          <li><a href="gallery.html">Gallery</a></li>
           <li><a href="demo.html">Demo</a></li>
           <li><a href="analyze.html">Analyzer</a></li>
           <li><a href="index.html#install">Installation</a></li>
@@ -1123,6 +1186,48 @@ const SIGNALS = [
   { id: 'benefits_listed',      label: 'Legitimate Benefits',             category: 'positive',  weight: -10, keywords: ['health insurance','dental','vision','401k','401(k)','pto','paid time off','parental leave','stock options','equity'] },
 ];
 
+const SIGNAL_TIPS = {
+  upfront_payment: 'Legitimate employers never charge employees. This is the #1 indicator of job scams.',
+  personal_info_request: 'SSN, bank details, or ID should never be shared before a verified hire and I-9 process.',
+  guaranteed_income: 'No legitimate job can guarantee specific earnings. This language is a legal red flag.',
+  crypto_payment: 'Crypto payments are irreversible and untraceable — a hallmark of fraud schemes.',
+  urgency_pressure: 'Scammers create artificial urgency to prevent you from researching the company.',
+  suspicious_contact: 'Legitimate recruiters use company email, not WhatsApp, Telegram, or personal Gmail.',
+  too_good_salary: 'If the pay seems too good to be true, it almost certainly is. Compare with Glassdoor/Levels.fyi.',
+  no_interview: 'Every legitimate employer conducts interviews. Instant offers bypass your due diligence.',
+  vague_description: 'Real jobs have specific responsibilities. Vagueness hides the true nature of the "work."',
+  reshipping_scam: 'Receiving and forwarding packages makes you a mule for stolen goods. You can be prosecuted.',
+  no_experience_needed: 'High-paying roles that need zero experience are almost always scams or MLMs.',
+  mlm_language: 'Terms like "be your own boss" or "unlimited earning" signal multi-level marketing, not employment.',
+  stale_posting: 'Jobs open for months are likely ghost jobs — not real openings.',
+  evergreen_posting: 'Perpetually open postings exist to harvest resumes, not to hire.',
+  no_company_presence: 'If a company has no web presence, LinkedIn, or reviews, it may not exist.',
+  company_domain_mismatch: 'The job URL domain doesn\'t match the claimed employer — possible impersonation.',
+  benefits_listed: 'Legitimate benefits (401k, health insurance, PTO) are a strong positive signal.',
+  structured_interview: 'A defined interview process (phone screen, technical, references) indicates a real opening.',
+  company_details: 'Specific company info (founding year, team size, funding) suggests legitimacy.',
+  salary_range: 'Transparent salary ranges are a positive signal of a legitimate, competitive employer.',
+  upfront_payment_required: 'Legitimate employers never charge employees. This is the #1 indicator of job scams.',
+  ssn___bank_info_requested: 'SSN, bank details, or ID should never be shared before a verified hire and I-9 process.',
+  guaranteed_income_claims: 'No legitimate job can guarantee specific earnings. This language is a legal red flag.',
+  cryptocurrency_payment: 'Crypto payments are irreversible and untraceable — a hallmark of fraud schemes.',
+  high_pressure_urgency: 'Scammers create artificial urgency to prevent you from researching the company.',
+  excessive_personal_info_demand: 'SSN, bank details, or ID should never be shared before a verified hire and I-9 process.',
+  check_cashing_scheme: 'Check cashing schemes use you to launder stolen money. You can be held liable.',
+  mlm___pyramid_structure: 'Terms like "be your own boss" or "unlimited earning" signal multi-level marketing, not employment.',
+  unrealistic_remote_promise: 'High-paying roles that need zero experience are almost always scams or MLMs.',
+  vague_company_description: 'Real jobs have specific responsibilities. Vagueness hides the true nature of the "work."',
+  unusually_high_salary_claim: 'If the pay seems too good to be true, it almost certainly is. Compare with Glassdoor/Levels.fyi.',
+  spelling___grammar_issues: 'Poor grammar and excessive punctuation are common in mass-produced scam postings.',
+  reshipping___package_handling: 'Receiving and forwarding packages makes you a mule for stolen goods. You can be prosecuted.',
+  perpetually_open_role: 'Perpetually open postings exist to harvest resumes, not to hire.',
+  no_direct_contact: 'No way to contact the employer directly is a red flag for ghost jobs.',
+  no_qualifications_listed: 'High-paying roles that need zero qualifications are almost always scams or MLMs.',
+  detailed_company_info: 'Specific company info (founding year, team size, funding) suggests legitimacy.',
+  structured_interview_process: 'A defined interview process (phone screen, technical, references) indicates a real opening.',
+  legitimate_benefits: 'Legitimate benefits (401k, health insurance, PTO) are a strong positive signal.',
+};
+
 function detectGrammarIssues(text) {
   let score = 0;
   if ((text.match(/!!+/g) || []).length > 0) score += 3;
@@ -1368,6 +1473,32 @@ function renderResults(result, source) {
     </div>
   `;
 
+  // Comparison bar
+  const avgScam = 78;
+  const avgLegit = 8;
+  html += `
+    <div class="comparison-bar-section">
+      <div class="comparison-title">How does this compare?</div>
+      <div class="comparison-rows">
+        <div class="comp-row">
+          <span class="comp-label">This posting</span>
+          <div class="comp-track"><div class="comp-fill ${cls}" style="width:${score}%;background:${color}"></div></div>
+          <span class="comp-val" style="color:${color}">${score}</span>
+        </div>
+        <div class="comp-row">
+          <span class="comp-label">Avg scam</span>
+          <div class="comp-track"><div class="comp-fill score-red" style="width:${avgScam}%;background:var(--red)"></div></div>
+          <span class="comp-val" style="color:var(--red)">${avgScam}</span>
+        </div>
+        <div class="comp-row">
+          <span class="comp-label">Avg legit</span>
+          <div class="comp-track"><div class="comp-fill score-green" style="width:${avgLegit}%;background:var(--green)"></div></div>
+          <span class="comp-val" style="color:var(--green)">${avgLegit}</span>
+        </div>
+      </div>
+    </div>
+  `;
+
   // Signal sections
   const sections = [
     { key: 'red_flags',         icon: '🚨', title: 'Red Flags',          cat: 'red_flag',   dotCls: 'sig-red',    catCls: 'cat-red_flag' },
@@ -1426,6 +1557,25 @@ function renderResults(result, source) {
   window._lastScore  = score;
 
   area.innerHTML = html;
+
+  // Signal tooltip click handler
+  area.querySelectorAll('.signal-row').forEach(row => {
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', function() {
+      const existing = this.querySelector('.signal-tip-detail');
+      if (existing) { existing.remove(); return; }
+      // Close others
+      area.querySelectorAll('.signal-tip-detail').forEach(el => el.remove());
+      const name = this.querySelector('.signal-row-name')?.textContent?.trim() || '';
+      const key = name.replace(/\s+/g, '_').toLowerCase().replace(/\u24d8/g, '').trim();
+      const tip = SIGNAL_TIPS[key];
+      if (!tip) return;
+      const tipEl = document.createElement('div');
+      tipEl.className = 'signal-tip-detail';
+      tipEl.textContent = tip;
+      this.querySelector('.signal-row-body').appendChild(tipEl);
+    });
+  });
 
   // Highlight evidence in source text
   const jobText = document.getElementById('jobText');
@@ -1703,6 +1853,21 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     handleAnalyze();
   }
+});
+
+
+/* PASTE-ANYWHERE — paste on page body auto-fills textarea */
+document.addEventListener('paste', function(e) {
+  const active = document.activeElement;
+  if (active && (active.id === 'jobText' || active.id === 'jobUrl' || active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (!text || text.trim().length < 30) return;
+  e.preventDefault();
+  const ta = document.getElementById('jobText');
+  ta.value = text;
+  switchTab('text');
+  ta.focus();
+  handleAnalyze();
 });
 
 /* LIVE ANALYSIS — debounced real-time scanning */
