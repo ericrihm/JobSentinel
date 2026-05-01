@@ -504,6 +504,49 @@ def parse_job_html(html: str, url: str = "") -> JobPosting:
 
 
 # ---------------------------------------------------------------------------
+# URL fetcher
+# ---------------------------------------------------------------------------
+
+def parse_job_url(url: str) -> "JobPosting":
+    """Fetch a job URL and parse it into a JobPosting.
+
+    Requires httpx (optional dependency). If httpx is not installed, raises
+    ImportError with a clear message. On any fetch/parse failure, returns a
+    minimal JobPosting with the URL set so analysis can still proceed.
+
+    Never raises on network/parse errors — those are swallowed and a
+    best-effort JobPosting is returned.
+    """
+    try:
+        import httpx
+    except ImportError as exc:
+        raise ImportError(
+            "httpx is required for URL fetching. Install it with: pip install httpx"
+        ) from exc
+
+    job = JobPosting(url=url, source="linkedin")
+    try:
+        with httpx.Client(timeout=10.0, follow_redirects=True) as client:
+            response = client.get(
+                url,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (compatible; SentinelBot/1.0; "
+                        "+https://github.com/sentinel)"
+                    )
+                },
+            )
+            response.raise_for_status()
+            job = parse_job_html(response.text, url=url)
+    except Exception:
+        pass
+
+    job.url = url
+    job.source = "linkedin"
+    return job
+
+
+# ---------------------------------------------------------------------------
 # JSON dict parser
 # ---------------------------------------------------------------------------
 

@@ -5,7 +5,7 @@ from typing import Optional
 
 from sentinel.models import JobPosting, ScamSignal, SignalCategory, ValidationResult, RiskLevel
 from sentinel.signals import extract_signals
-from sentinel.scorer import score_signals, classify_risk, build_result
+from sentinel.scorer import build_result
 
 try:
     import anthropic as _anthropic
@@ -38,15 +38,10 @@ def analyze_job(job: JobPosting, use_ai: bool = True) -> ValidationResult:
     start_ms = time.monotonic() * 1000
 
     signals = extract_signals(job)
-    score, confidence = score_signals(signals)
-    risk = classify_risk(score)
     result = build_result(job, signals)
-    result.scam_score = score
-    result.confidence = confidence
-    result.risk_level = risk
 
-    if use_ai and _AMBIGUOUS_LOW <= score <= _AMBIGUOUS_HIGH:
-        ai_text, tier = _escalate_to_ai(job, signals, score)
+    if use_ai and _AMBIGUOUS_LOW <= result.scam_score <= _AMBIGUOUS_HIGH:
+        ai_text, tier = _escalate_to_ai(job, signals, result.scam_score)
         result.ai_analysis = ai_text
         result.ai_tier_used = tier
 
@@ -54,7 +49,7 @@ def analyze_job(job: JobPosting, use_ai: bool = True) -> ValidationResult:
     return result
 
 
-def analyze_text(text: str, title: str = "", company: str = "") -> ValidationResult:
+def analyze_text(text: str, title: str = "", company: str = "", use_ai: bool = True) -> ValidationResult:
     """Convenience: analyze from raw text (creates JobPosting internally)."""
     job = JobPosting(
         description=text,
@@ -62,18 +57,14 @@ def analyze_text(text: str, title: str = "", company: str = "") -> ValidationRes
         company=company,
         source="text",
     )
-    return analyze_job(job)
+    return analyze_job(job, use_ai=use_ai)
 
 
-def analyze_url(url: str) -> ValidationResult:
-    """Analyze a LinkedIn job URL (requires scanner module for parsing)."""
-    try:
-        from sentinel.scanner import parse_job_url
-        job = parse_job_url(url)
-    except (ImportError, Exception):
-        job = JobPosting(url=url, source="linkedin")
-
-    return analyze_job(job)
+def analyze_url(url: str, use_ai: bool = True) -> ValidationResult:
+    """Analyze a LinkedIn job URL (requires httpx + scanner module for parsing)."""
+    from sentinel.scanner import parse_job_url
+    job = parse_job_url(url)
+    return analyze_job(job, use_ai=use_ai)
 
 
 def _escalate_to_ai(
