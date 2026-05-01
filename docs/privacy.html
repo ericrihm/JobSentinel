@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="JobSentinel Privacy Policy — how we handle your data when you analyze job postings." />
+  <title>Privacy Policy — JobSentinel</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
+  <style>
+    .legal-content { max-width: 760px; margin: 0 auto; }
+    .legal-content h2 { font-size: 1.4rem; margin-top: 40px; margin-bottom: 12px; }
+    .legal-content h3 { font-size: 1.1rem; margin-top: 28px; margin-bottom: 8px; color: var(--accent); }
+    .legal-content p, .legal-content li { font-size: .9rem; color: var(--muted); line-height: 1.7; }
+    .legal-content ul { list-style: disc; padding-left: 24px; }
+    .legal-content ul li { margin-bottom: 6px; }
+    .legal-hero { padding: 60px 0 20px; text-align: center; border-bottom: 1px solid var(--border); }
+    .legal-hero h1 { font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 800; margin-bottom: 8px; }
+    .legal-hero p { color: var(--muted); font-size: .95rem; }
+    .legal-section { padding: 40px 0 80px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo"><span class="nav-logo-icon">🛡</span><span>JobSentinel</span></a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="analyze.html">Analyze</a></li>
+      <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" aria-label="Toggle menu">☰</button>
+  </div>
+</nav>
+
+<div class="legal-hero">
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <p>Last updated: May 1, 2026</p>
+  </div>
+</div>
+
+<section class="legal-section">
+  <div class="container legal-content">
+
+    <h2>Overview</h2>
+    <p>JobSentinel is an open-source job scam detection tool. We are committed to protecting your privacy. This policy explains what data we collect, how we use it, and your rights.</p>
+
+    <h2>What We Collect</h2>
+
+    <h3>When you use the web analyzer</h3>
+    <ul>
+      <li><strong>Job posting text</strong> — The text you paste into the analyzer. We process it to detect scam signals and return a risk score.</li>
+      <li><strong>IP address</strong> — Used solely for rate limiting (10 requests/minute). We do not store IP addresses beyond the rate-limit window (60 seconds).</li>
+      <li><strong>Scan metadata</strong> — Job title, company name, risk score, and signal count are logged to our database to improve detection accuracy. Raw job description text is <strong>not</strong> stored.</li>
+    </ul>
+
+    <h3>When you submit a report</h3>
+    <ul>
+      <li><strong>URL</strong> — The job posting URL you report.</li>
+      <li><strong>Verdict</strong> — Whether you marked it as scam or legitimate.</li>
+      <li><strong>Reason</strong> — Optional text explaining why.</li>
+    </ul>
+
+    <h3>When you use the browser extension</h3>
+    <ul>
+      <li>The extension reads job posting content from the current page and sends it to our API for analysis.</li>
+      <li>Analysis results are cached locally in your browser (chrome.storage.local) for 24 hours.</li>
+      <li>No browsing history, credentials, or personal data is collected.</li>
+    </ul>
+
+    <h3>What we do NOT collect</h3>
+    <ul>
+      <li>No personal information (name, email, phone)</li>
+      <li>No account creation required</li>
+      <li>No cookies for tracking or advertising</li>
+      <li>No third-party analytics or advertising scripts</li>
+      <li>No selling or sharing of any data with third parties</li>
+    </ul>
+
+    <h2>How We Use Data</h2>
+    <ul>
+      <li><strong>Scam detection</strong> — Analyzing the text you submit and returning a risk score.</li>
+      <li><strong>Service improvement</strong> — Aggregate scan statistics (total scans, risk level distribution) help us measure detection accuracy.</li>
+      <li><strong>User reports</strong> — Community reports of scams and legitimate postings help us calibrate signal weights and detect new scam patterns.</li>
+    </ul>
+
+    <h2>Data Storage</h2>
+    <ul>
+      <li>Scan metadata is stored in a Cloudflare D1 database (SQLite at the edge).</li>
+      <li>Rate limit data is stored in Cloudflare KV with a 70-second TTL and is automatically deleted.</li>
+      <li>No data is stored in regions outside of Cloudflare's global network.</li>
+    </ul>
+
+    <h2>Data Retention</h2>
+    <ul>
+      <li><strong>Scan metadata</strong> — Retained for 90 days, then automatically purged.</li>
+      <li><strong>User reports</strong> — Retained indefinitely to improve detection (reports contain no personal data).</li>
+      <li><strong>Rate limit data</strong> — Automatically deleted after 70 seconds.</li>
+    </ul>
+
+    <h2>Your Rights</h2>
+    <ul>
+      <li>You can use JobSentinel without creating an account or providing personal information.</li>
+      <li>The client-side demo on our homepage processes everything in your browser — no data leaves your device.</li>
+      <li>You can run JobSentinel locally (<code>pip install sentinel</code>) for fully offline analysis.</li>
+      <li>To request deletion of any data associated with a URL you reported, email <a href="mailto:ericrihm@gmail.com">ericrihm@gmail.com</a>.</li>
+    </ul>
+
+    <h2>Third-Party Services</h2>
+    <ul>
+      <li><strong>Cloudflare Workers</strong> — Our API runs on Cloudflare's edge network. See <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener">Cloudflare's privacy policy</a>.</li>
+      <li><strong>GitHub Pages</strong> — Our website is hosted on GitHub Pages. See <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub's privacy statement</a>.</li>
+    </ul>
+
+    <h2>Open Source</h2>
+    <p>JobSentinel is fully open source under the MIT license. You can inspect exactly what data is collected by reading our <a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">source code on GitHub</a>. The API worker code, signal detection logic, and database schema are all publicly auditable.</p>
+
+    <h2>Changes</h2>
+    <p>We may update this policy as the service evolves. Changes will be committed to the GitHub repository and reflected on this page with an updated date.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this privacy policy? Open an issue on <a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">GitHub</a> or email <a href="mailto:ericrihm@gmail.com">ericrihm@gmail.com</a>.</p>
+
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-bottom">
+      <p>&copy; 2025 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+const toggle = document.querySelector('.nav-mobile-toggle');
+const navLinks = document.querySelector('.nav-links');
+toggle?.addEventListener('click', () => navLinks?.classList.toggle('open'));
+</script>
+</body>
+</html>

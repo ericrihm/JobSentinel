@@ -1,24 +1,18 @@
-# JobSentinel — Cloudflare Workers Deployment
+# JobSentinel API — Cloudflare Worker
 
-Free, globally-distributed job scam analysis API running on Cloudflare Workers free tier (100,000 requests/day).
+This directory contains the Cloudflare Worker that powers the `api.jobsentinel.org` backend. It handles job scan requests, rate limiting via KV, and persists scan history in D1.
 
-## Architecture
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Compute | Cloudflare Workers | JS runtime, globally distributed |
-| Rate limiting | Cloudflare KV | Sliding-window 10 req/min per IP |
-| Persistence | Cloudflare D1 | Scan history, patterns, user reports |
-| Signals | `src/signals.js` | 16 regex-based scam detectors |
-| Scoring | `src/scorer.js` | Log-odds Bayesian scoring (matches Python) |
+---
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) (`npm install -g wrangler`)
-- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is sufficient)
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/): `npm install -g wrangler`
+- A Cloudflare account with the `jobsentinel.org` zone active
 
-## Setup
+---
+
+## One-Time Setup
 
 ### 1. Authenticate with Cloudflare
 
@@ -26,212 +20,168 @@ Free, globally-distributed job scam analysis API running on Cloudflare Workers f
 wrangler login
 ```
 
-### 2. Install dependencies
+Verify your account:
 
 ```bash
-cd workers
-npm install
+wrangler whoami
 ```
 
-### 3. Create KV namespace for rate limiting
+Copy your **Account ID** and paste it into `wrangler.toml` (uncomment the `account_id` line).
+
+---
+
+### 2. Create the KV Namespace (rate limiting)
 
 ```bash
 wrangler kv:namespace create "RATE_LIMIT"
-# Copy the output IDs into wrangler.toml:
-#   id = "..."
-#   preview_id = "..."
 ```
 
-### 4. Create D1 database
+The command outputs something like:
+
+```
+{ binding = "RATE_LIMIT", id = "abc123...", preview_id = "def456..." }
+```
+
+Open `wrangler.toml` and replace the placeholder values:
+
+```toml
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "abc123..."          # from the command above
+preview_id = "def456..."  # from the command above
+```
+
+---
+
+### 3. Create the D1 Database
 
 ```bash
 wrangler d1 create jobsentinel-db
-# Copy the database_id into wrangler.toml
 ```
 
-### 5. Apply database schema
+The command outputs:
+
+```
+{ database_name = "jobsentinel-db", database_id = "ghi789..." }
+```
+
+Open `wrangler.toml` and replace the placeholder:
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "jobsentinel-db"
+database_id = "ghi789..."  # from the command above
+```
+
+---
+
+### 4. Initialize the Remote Schema
 
 ```bash
-# Local dev
-npm run db:init
-
-# Deployed (remote) database
 npm run db:init:remote
 ```
 
-### 6. Update wrangler.toml
+This runs `wrangler d1 execute` against the live D1 instance using `src/schema.sql`.
 
-Fill in the placeholder values in `wrangler.toml`:
-- `RATE_LIMIT.id` — from step 3
-- `RATE_LIMIT.preview_id` — from step 3
-- `DB.database_id` — from step 4
+---
 
-### 7. Deploy
+## Deploy
 
 ```bash
 npm run deploy
 ```
 
-Your worker URL will be printed:
+This runs `wrangler deploy`. On success, Wrangler prints the worker URL (e.g., `https://jobsentinel-api.<your-subdomain>.workers.dev`).
+
+---
+
+## Custom Domain Setup (api.jobsentinel.org)
+
+1. In the [Cloudflare dashboard](https://dash.cloudflare.com), go to **Workers & Pages**.
+2. Select **jobsentinel-api**.
+3. Open the **Triggers** tab and click **Add Custom Domain**.
+4. Enter `api.jobsentinel.org` and confirm.
+
+Cloudflare will automatically provision a TLS certificate and create the DNS record. The `[[routes]]` block in `wrangler.toml` is also set so that `wrangler deploy` routes traffic from `api.jobsentinel.org/*` to the worker.
+
+---
+
+## Environment Variables
+
+Sensitive values (API keys, secrets) must be stored as Worker Secrets — never in `wrangler.toml`.
+
+```bash
+# Set a secret (prompts for the value interactively)
+wrangler secret put SECRET_NAME
+
+# List configured secrets
+wrangler secret list
+
+# Delete a secret
+wrangler secret delete SECRET_NAME
 ```
-https://jobsentinel-api.<your-subdomain>.workers.dev
+
+| Variable / Secret | Description |
+|---|---|
+| `ENVIRONMENT` | Set to `production` in `wrangler.toml` [vars] |
+| `API_VERSION` | Current API version string |
+
+Add any additional secrets your worker reads via `env.SECRET_NAME` using the commands above.
+
+---
+
+## Monitoring & Logs
+
+Stream live logs from the deployed worker:
+
+```bash
+npm run logs
+# equivalent to: wrangler tail
 ```
+
+Filter by status or sampling rate:
+
+```bash
+wrangler tail --status error
+wrangler tail --sampling-rate 0.1
+```
+
+View metrics (requests, errors, CPU time) in the Cloudflare dashboard under **Workers & Pages → jobsentinel-api → Metrics**.
+
+---
+
+## Schema Migrations
+
+When `src/schema.sql` changes, apply it to the remote D1 database:
+
+```bash
+npm run db:init:remote
+```
+
+For incremental migrations (ALTER TABLE, etc.), run them directly:
+
+```bash
+wrangler d1 execute jobsentinel-db --remote --command "ALTER TABLE scans ADD COLUMN foo TEXT"
+```
+
+---
 
 ## Local Development
 
 ```bash
 npm run dev
-# Worker available at http://localhost:8787
+# equivalent to: wrangler dev
 ```
 
-## API Reference
+The worker runs locally at `http://localhost:8787` with a local KV and D1 instance. No remote resources are touched.
 
-### POST /api/analyze
+---
 
-Analyze a job posting for scam signals.
+## CI/CD
 
-**Request body (text mode):**
-```json
-{
-  "text": "Job description text...",
-  "title": "Software Engineer",
-  "company": "Acme Corp",
-  "url": "https://linkedin.com/jobs/view/123",
-  "posted_date": "2024-01-15",
-  "is_remote": false,
-  "salary_min": 0,
-  "salary_max": 0,
-  "experience_level": ""
-}
-```
+Pushes to `main` that change files under `workers/` automatically deploy via the GitHub Actions workflow at `.github/workflows/deploy-worker.yml`. The workflow also runs the schema migration when `src/schema.sql` changes.
 
-**Request body (structured mode — Chrome extension):**
-```json
-{
-  "job_data": {
-    "title": "Software Engineer",
-    "company": "Acme Corp",
-    "description": "Full job description...",
-    "url": "https://linkedin.com/jobs/view/123",
-    "company_linkedin_url": "https://linkedin.com/company/acme",
-    "salary_min": 120000,
-    "salary_max": 160000,
-    "posted_date": "2024-01-01",
-    "experience_level": "mid",
-    "is_remote": true,
-    "recruiter_connections": 150
-  }
-}
-```
+Required repository secret: `CLOUDFLARE_API_TOKEN`
 
-**Response:**
-```json
-{
-  "job": { "url": "...", "title": "...", "company": "..." },
-  "scam_score": 0.12,
-  "confidence": 0.65,
-  "risk_level": "safe",
-  "risk_label": "Verified Safe",
-  "red_flags": [],
-  "warnings": [],
-  "ghost_indicators": [],
-  "positive_signals": [],
-  "structural": [],
-  "signal_count": 0,
-  "ai_tier_used": "worker-regex",
-  "analysis_time_ms": 2.1,
-  "source": "cloudflare-worker"
-}
-```
-
-**Risk levels:**
-
-| risk_level | scam_score | Meaning |
-|-----------|-----------|---------|
-| `safe` | < 0.2 | Verified Safe |
-| `low` | 0.2 – 0.4 | Likely Legitimate |
-| `suspicious` | 0.4 – 0.6 | Review carefully |
-| `high` | 0.6 – 0.8 | Likely Scam |
-| `scam` | ≥ 0.8 | Almost Certainly Scam |
-
-### POST /api/report
-
-Submit crowd-sourced feedback.
-
-```json
-{
-  "url": "https://linkedin.com/jobs/view/123",
-  "is_scam": true,
-  "reason": "Asked for SSN before interview"
-}
-```
-
-### GET /api/patterns
-
-List active scam patterns stored in D1.
-
-### GET /api/stats
-
-Detection statistics (total scans, avg score, risk breakdown).
-
-### GET /api/health
-
-Health check endpoint.
-
-## Rate Limiting
-
-- 10 requests per minute per IP address
-- Uses Cloudflare KV for sliding-window tracking
-- Returns `429` with `Retry-After` header when exceeded
-- `X-RateLimit-Remaining` header on every response
-
-## Signals Implemented (16 total)
-
-| Signal | Category | Weight |
-|--------|----------|--------|
-| `upfront_payment` | red_flag | 0.95 |
-| `personal_info_request` | red_flag | 0.92 |
-| `crypto_payment` | red_flag | 0.90 |
-| `reshipping` | red_flag | 0.90 |
-| `guaranteed_income` | red_flag | 0.85 |
-| `mlm_language` | red_flag | 0.80 |
-| `interview_bypass` | red_flag | 0.75 |
-| `suspicious_email_domain` | red_flag | 0.78 |
-| `no_company` | red_flag | 0.70–0.85 |
-| `wfh_unrealistic` | warning | 0.65 |
-| `salary_anomaly` | warning | 0.55–0.70 |
-| `urgency_language` | warning | 0.58 |
-| `suspicious_links` | structural | 0.58 |
-| `stale_posting` | ghost_job | 0.42–0.58 |
-| `vague_description` | warning | 0.50–0.65 |
-| `no_qualifications` | warning | 0.48 |
-
-## Chrome Extension Integration
-
-The worker accepts the same `job_data` JSON format that the existing Chrome extension sends to the Python API. To point the extension at the Worker, update the extension's API base URL:
-
-```js
-// In extension/background.js or config
-const API_BASE = 'https://jobsentinel-api.<subdomain>.workers.dev';
-```
-
-No other changes required — the response schema is identical to the Python API.
-
-## Cost
-
-- Workers free tier: 100,000 requests/day, no credit card required
-- KV free tier: 100,000 reads/day, 1,000 writes/day
-- D1 free tier: 5 million reads/day, 100,000 writes/day, 5 GB storage
-- All free tiers are more than sufficient for individual or small-team use
-
-## Custom Domain (Optional)
-
-To serve from your own domain instead of `workers.dev`, uncomment and fill in the `[routes]` section in `wrangler.toml`:
-
-```toml
-[routes]
-pattern = "api.yourdomain.com/*"
-zone_name = "yourdomain.com"
-```
-
-Then deploy again with `npm run deploy`.
+Generate a token in the Cloudflare dashboard: **My Profile → API Tokens → Create Token → Edit Cloudflare Workers** template.

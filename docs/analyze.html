@@ -1,0 +1,1493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="JobSentinel Analyzer — Paste any job description or URL to instantly detect scam signals, red flags, and ghost job indicators with AI-powered analysis." />
+  <meta name="keywords" content="job scam detection, fake job posting, job fraud analyzer, employment scam checker, JobSentinel" />
+  <meta property="og:title" content="JobSentinel — Job Scam Analyzer" />
+  <meta property="og:description" content="Paste a job description or URL to get an instant AI-powered scam risk score. Detect red flags, warnings, and ghost job indicators before you apply." />
+  <meta property="og:url" content="https://jobsentinel.org/analyze" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://jobsentinel.org/og-analyze.png" />
+  <title>Job Scam Analyzer — JobSentinel</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
+  <style>
+    /* ============================================================
+       analyze.html — page-specific styles
+       ============================================================ */
+
+    /* Layout */
+    .analyze-layout {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 24px;
+      align-items: start;
+      padding: 28px 0 60px;
+    }
+
+    /* Page header */
+    .analyze-header {
+      padding: 36px 0 0;
+    }
+    .analyze-header h1 {
+      font-size: clamp(1.6rem, 3.5vw, 2.2rem);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      margin-bottom: 8px;
+      background: linear-gradient(160deg, #fff 40%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .analyze-header p {
+      color: var(--muted);
+      font-size: .95rem;
+      margin-bottom: 0;
+    }
+
+    /* Rate limit bar */
+    .rate-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: .8rem;
+      color: var(--muted);
+      margin-top: 14px;
+    }
+    .rate-bar .rate-icon { font-size: .9rem; }
+    .rate-count { color: var(--accent); font-weight: 700; font-family: var(--mono); }
+    .rate-track {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .rate-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width .4s ease;
+    }
+
+    /* Input card */
+    .input-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .input-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .input-card-title {
+      font-size: .85rem;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .input-tab-bar {
+      display: flex;
+      gap: 4px;
+    }
+    .input-tab {
+      padding: 5px 14px;
+      border-radius: 6px;
+      font-size: .8rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      background: none;
+      color: var(--muted);
+      font-family: var(--font);
+      transition: all .2s;
+    }
+    .input-tab.active {
+      background: var(--surface2);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .input-tab:hover:not(.active) { color: var(--text); }
+
+    .input-panel { display: none; }
+    .input-panel.active { display: block; }
+
+    #jobText {
+      width: 100%;
+      min-height: 220px;
+      max-height: 420px;
+      background: var(--surface2);
+      border: none;
+      resize: vertical;
+      padding: 18px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: .85rem;
+      line-height: 1.65;
+      outline: none;
+    }
+    #jobText::placeholder { color: var(--muted); }
+
+    .url-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 16px 18px;
+      gap: 10px;
+    }
+    .url-icon { font-size: 1rem; color: var(--muted); flex-shrink: 0; }
+    #jobUrl {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: .9rem;
+      min-height: 36px;
+    }
+    #jobUrl::placeholder { color: var(--muted); }
+
+    .input-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-wrap: wrap;
+    }
+    .input-actions .spacer { flex: 1; }
+
+    .sample-btns {
+      display: flex;
+      gap: 6px;
+    }
+    .sample-btn {
+      padding: 5px 11px;
+      font-size: .75rem;
+      border-radius: 5px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      font-family: var(--font);
+      font-weight: 500;
+      transition: all .2s;
+    }
+    .sample-btn:hover { background: var(--border); color: var(--text); }
+
+    /* Analyze button states */
+    #analyzeBtn {
+      min-width: 140px;
+      position: relative;
+    }
+    #analyzeBtn .btn-text { transition: opacity .2s; }
+    #analyzeBtn .btn-spinner {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+    }
+    #analyzeBtn.loading .btn-text { opacity: 0; }
+    #analyzeBtn.loading .btn-spinner { display: flex; }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner-ring {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(0,0,0,.25);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    /* Source badge */
+    .source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: .7rem;
+      font-weight: 600;
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .source-api     { background: rgba(88,166,255,.12); color: var(--accent); border: 1px solid rgba(88,166,255,.2); }
+    .source-local   { background: rgba(210,153,34,.12); color: var(--yellow); border: 1px solid rgba(210,153,34,.2); }
+    .source-offline { background: rgba(139,148,158,.1); color: var(--muted);  border: 1px solid var(--border); }
+
+    /* Results area */
+    #resultsArea {
+      margin-top: 24px;
+    }
+    #resultsArea:empty { display: none; }
+
+    /* Score card */
+    .result-score-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .result-score-top {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+
+    .score-circle-lg {
+      flex-shrink: 0;
+      width: 110px; height: 110px;
+      border-radius: 50%;
+      border: 5px solid;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      position: relative;
+    }
+    .score-circle-lg .score-num { font-size: 2.2rem; line-height: 1; }
+    .score-circle-lg .score-denom { font-size: .7rem; color: inherit; opacity: .6; margin-top: 1px; }
+
+    .score-info { flex: 1; }
+    .score-risk-label {
+      font-size: 1.5rem;
+      font-weight: 800;
+      letter-spacing: -.01em;
+      margin-bottom: 6px;
+    }
+    .score-risk-detail {
+      font-size: .9rem;
+      color: var(--muted);
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .score-meta-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: .8rem;
+      color: var(--muted);
+    }
+    .score-meta-sep { opacity: .4; }
+
+    .result-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .result-actions .spacer { flex: 1; }
+
+    .report-btns {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .report-btns label { font-size: .8rem; color: var(--muted); }
+    .report-btn {
+      padding: 6px 14px;
+      font-size: .8rem;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      font-family: var(--font);
+      font-weight: 600;
+      transition: all .2s;
+    }
+    .report-btn:hover { border-color: var(--accent); color: var(--text); }
+    .report-btn.report-scam:hover { border-color: var(--red); color: var(--red); }
+    .report-btn.report-legit:hover { border-color: var(--green); color: var(--green); }
+    .report-btn.reported { opacity: .6; cursor: default; }
+
+    /* Signal sections */
+    .signal-section {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .signal-section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .signal-section-icon { font-size: 1.1rem; }
+    .signal-section-title {
+      font-size: .875rem;
+      font-weight: 700;
+      flex: 1;
+    }
+    .signal-section-count {
+      font-size: .75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .signal-section-body { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+    .signal-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      align-items: start;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .signal-row-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+    .signal-row-body { min-width: 0; }
+    .signal-row-name { font-size: .875rem; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .signal-row-evidence {
+      font-size: .78rem;
+      color: var(--muted);
+      line-height: 1.45;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .signal-row-cat {
+      font-size: .7rem;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      white-space: nowrap;
+      align-self: start;
+    }
+    .cat-red_flag   { background: rgba(248,81,73,.12);   color: var(--red); }
+    .cat-warning    { background: rgba(219,109,40,.12);  color: var(--orange); }
+    .cat-ghost      { background: rgba(210,153,34,.12);  color: var(--yellow); }
+    .cat-structural { background: rgba(88,166,255,.1);   color: var(--accent); }
+    .cat-positive   { background: rgba(63,185,80,.12);   color: var(--green); }
+
+    .signal-row-weight {
+      font-size: .75rem;
+      font-weight: 700;
+      font-family: var(--mono);
+      padding: 2px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      align-self: start;
+    }
+
+    .empty-section {
+      padding: 14px 18px;
+      font-size: .82rem;
+      color: var(--muted);
+      text-align: center;
+      font-style: italic;
+    }
+
+    /* Error/info banners */
+    .notice {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      font-size: .85rem;
+      margin-bottom: 16px;
+    }
+    .notice-warn {
+      background: rgba(210,153,34,.08);
+      border: 1px solid rgba(210,153,34,.25);
+      color: var(--yellow);
+    }
+    .notice-info {
+      background: rgba(88,166,255,.08);
+      border: 1px solid rgba(88,166,255,.2);
+      color: var(--accent);
+    }
+    .notice-err {
+      background: rgba(248,81,73,.08);
+      border: 1px solid rgba(248,81,73,.2);
+      color: var(--red);
+    }
+    .notice-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+    .notice-body { flex: 1; line-height: 1.4; }
+
+    /* Sidebar */
+    .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+    .sidebar-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .sidebar-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .sidebar-card-title {
+      font-size: .8rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .sidebar-card-action {
+      font-size: .75rem;
+      color: var(--muted);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: var(--font);
+      transition: color .2s;
+    }
+    .sidebar-card-action:hover { color: var(--text); }
+
+    /* History list */
+    .history-list {
+      display: flex;
+      flex-direction: column;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-item:hover { background: rgba(255,255,255,.03); }
+
+    .history-score {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      border: 2px solid;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .75rem;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .history-info { flex: 1; min-width: 0; }
+    .history-title {
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+    .history-time { font-size: .72rem; color: var(--muted); }
+    .history-empty {
+      padding: 20px 14px;
+      font-size: .82rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    /* Tips card */
+    .tip-list {
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tip-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: .8rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .tip-icon { font-size: .85rem; flex-shrink: 0; margin-top: 1px; }
+
+    /* Confidence bar */
+    .confidence-bar-wrap {
+      padding: 0 0 16px;
+    }
+    .confidence-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: .78rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .confidence-label strong { color: var(--text); }
+    .confidence-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .confidence-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width .6s ease;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .analyze-layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        order: -1;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .sidebar { grid-template-columns: 1fr; }
+      .result-score-top { flex-direction: column; align-items: flex-start; gap: 16px; }
+      .score-circle-lg { width: 90px; height: 90px; }
+      .score-circle-lg .score-num { font-size: 1.8rem; }
+      .score-risk-label { font-size: 1.2rem; }
+      .signal-row { grid-template-columns: auto 1fr; grid-template-rows: auto auto; }
+      .signal-row-cat, .signal-row-weight { justify-self: start; }
+      .input-actions { flex-direction: column; align-items: stretch; }
+      .input-actions .spacer { display: none; }
+      #analyzeBtn { width: 100%; }
+      .sample-btns { justify-content: center; }
+      .report-btns { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo" aria-label="JobSentinel home">
+      <span class="nav-logo-icon">🛡</span>
+      <span>JobSentinel</span>
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="index.html#how-it-works">How It Works</a></li>
+      <li><a href="index.html#features">Features</a></li>
+      <li><a href="demo.html">Demo</a></li>
+      <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="analyze.html" class="nav-cta" aria-current="page">Analyze</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" id="mobileToggle" aria-label="Toggle menu" aria-expanded="false">☰</button>
+  </div>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="container">
+  <div class="analyze-header">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span class="badge badge-accent">Live Analysis</span>
+      <span id="sourceIndicator" style="display:none"></span>
+    </div>
+    <h1>Job Scam Analyzer</h1>
+    <p>Paste a job description or URL to get an AI-powered risk score with detailed signal breakdown.</p>
+
+    <div class="rate-bar" id="rateBar" style="display:none">
+      <span class="rate-icon">⚡</span>
+      <span><span class="rate-count" id="rateCount">—</span> API requests remaining</span>
+      <div class="rate-track">
+        <div class="rate-fill" id="rateFill" style="width:100%"></div>
+      </div>
+      <span style="font-size:.75rem" id="rateReset"></span>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="container">
+  <div class="analyze-layout">
+
+    <!-- LEFT: Input + Results -->
+    <div class="main-col">
+
+      <!-- Input card -->
+      <div class="input-card">
+        <div class="input-card-header">
+          <span class="input-card-title">📋 Job Posting Input</span>
+          <div class="input-tab-bar" role="tablist" aria-label="Input mode">
+            <button class="input-tab active" id="tabText" role="tab" aria-selected="true" aria-controls="panelText" onclick="switchTab('text')">Paste Text</button>
+            <button class="input-tab" id="tabUrl" role="tab" aria-selected="false" aria-controls="panelUrl" onclick="switchTab('url')">URL</button>
+          </div>
+        </div>
+
+        <!-- Text panel -->
+        <div class="input-panel active" id="panelText" role="tabpanel" aria-labelledby="tabText">
+          <textarea
+            id="jobText"
+            placeholder="Paste a job description here…
+
+Red flags to watch for:
+• Upfront fees or equipment purchases
+• Guaranteed income / unlimited earning claims
+• SSN, bank account, or credit card requests
+• Reshipping / package handling roles
+• High-pressure urgency ('Act now!' / 'Limited spots!')"
+            spellcheck="false"
+            aria-label="Job description text"
+          ></textarea>
+        </div>
+
+        <!-- URL panel -->
+        <div class="input-panel" id="panelUrl" role="tabpanel" aria-labelledby="tabUrl">
+          <div class="url-input-wrap">
+            <span class="url-icon">🔗</span>
+            <input
+              type="url"
+              id="jobUrl"
+              placeholder="https://linkedin.com/jobs/view/… or any job posting URL"
+              spellcheck="false"
+              aria-label="Job posting URL"
+            />
+          </div>
+        </div>
+
+        <div class="input-actions">
+          <button class="btn btn-primary" id="analyzeBtn" onclick="handleAnalyze()" aria-label="Analyze job posting">
+            <span class="btn-text">🔍 Analyze</span>
+            <span class="btn-spinner" aria-hidden="true"><span class="spinner-ring"></span></span>
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="clearAll()" aria-label="Clear input and results">✕ Clear</button>
+          <div class="spacer"></div>
+          <div class="sample-btns" aria-label="Load sample postings">
+            <button class="sample-btn" onclick="loadSample('scam')" title="Load a scam job posting example">⚠ Scam Example</button>
+            <button class="sample-btn" onclick="loadSample('safe')" title="Load a legitimate job posting example">✓ Safe Example</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div id="resultsArea" role="region" aria-live="polite" aria-label="Analysis results"></div>
+
+    </div>
+
+    <!-- RIGHT: Sidebar -->
+    <aside class="sidebar" aria-label="Sidebar">
+
+      <!-- History -->
+      <div class="sidebar-card">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title">Recent Analyses</span>
+          <button class="sidebar-card-action" onclick="clearHistory()" aria-label="Clear history">Clear all</button>
+        </div>
+        <div class="history-list" id="historyList">
+          <div class="history-empty" id="historyEmpty">No analyses yet. Submit a job posting to get started.</div>
+        </div>
+      </div>
+
+      <!-- Tips -->
+      <div class="sidebar-card">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title">Detection Tips</span>
+        </div>
+        <div class="tip-list">
+          <div class="tip-item"><span class="tip-icon">🔴</span><span><strong>Score 65+</strong> — Multiple strong scam signals. Do not provide personal information or money.</span></div>
+          <div class="tip-item"><span class="tip-icon">🟠</span><span><strong>Score 40–64</strong> — Suspicious. Research the company independently before proceeding.</span></div>
+          <div class="tip-item"><span class="tip-icon">🟡</span><span><strong>Score 20–39</strong> — Minor warnings. Verify the employer exists and is reputable.</span></div>
+          <div class="tip-item"><span class="tip-icon">🟢</span><span><strong>Score 0–19</strong> — Low risk. Standard job search precautions still apply.</span></div>
+          <div class="tip-item"><span class="tip-icon">💡</span><span>Paste the full job description for the most accurate results — more text gives more signals.</span></div>
+        </div>
+      </div>
+
+      <!-- About card -->
+      <div class="sidebar-card">
+        <div class="sidebar-card-header">
+          <span class="sidebar-card-title">About</span>
+        </div>
+        <div class="tip-list">
+          <div class="tip-item"><span class="tip-icon">🛡</span><span>JobSentinel uses 40+ signals across 5 categories to detect scams, ghost jobs, and fraudulent postings.</span></div>
+          <div class="tip-item"><span class="tip-icon">🔓</span><span>Open source and MIT licensed. Analysis runs via our API with a client-side fallback.</span></div>
+          <div class="tip-item"><span class="tip-icon">⭐</span><span><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">Star on GitHub</a> to support the project.</span></div>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <h3>🛡 JobSentinel</h3>
+        <p>AI-powered job scam detection. Free, open source, and constantly improving. Built to protect job seekers.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="index.html#how-it-works">How It Works</a></li>
+          <li><a href="index.html#features">Features</a></li>
+          <li><a href="demo.html">Demo</a></li>
+          <li><a href="analyze.html">Analyzer</a></li>
+          <li><a href="index.html#install">Installation</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">Issue Tracker</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel/discussions" target="_blank" rel="noopener">Discussions</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          <li><a href="https://jobsentinel.org" target="_blank" rel="noopener">jobsentinel.org</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>© 2025 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+        <span class="badge badge-accent">v0.9.0</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const API_URL      = 'https://api.jobsentinel.org/api/analyze';
+const RATE_LIMIT   = 10;   // shown to user when API doesn't return headers
+const LS_HISTORY   = 'js_analyze_history';
+const LS_RATE      = 'js_rate_state';
+
+/* ============================================================
+   NAV
+   ============================================================ */
+document.getElementById('mobileToggle').addEventListener('click', function () {
+  const nav = document.getElementById('navLinks');
+  const expanded = nav.classList.toggle('open');
+  this.setAttribute('aria-expanded', expanded);
+});
+
+/* ============================================================
+   TAB SWITCHING
+   ============================================================ */
+let activeTab = 'text';
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.input-tab').forEach(t => {
+    t.classList.remove('active');
+    t.setAttribute('aria-selected', 'false');
+  });
+  document.querySelectorAll('.input-panel').forEach(p => p.classList.remove('active'));
+
+  document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+  document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).setAttribute('aria-selected', 'true');
+  document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+}
+
+/* ============================================================
+   RATE LIMIT STATE
+   ============================================================ */
+let rateRemaining = null;
+
+function updateRateBar(remaining, total, resetTs) {
+  rateRemaining = remaining;
+  const bar    = document.getElementById('rateBar');
+  const count  = document.getElementById('rateCount');
+  const fill   = document.getElementById('rateFill');
+  const reset  = document.getElementById('rateReset');
+
+  bar.style.display = 'flex';
+  count.textContent = remaining;
+  const pct = total > 0 ? Math.min(100, (remaining / total) * 100) : 100;
+  fill.style.width  = pct + '%';
+  fill.style.background = pct > 50 ? 'var(--accent)' : pct > 20 ? 'var(--yellow)' : 'var(--red)';
+
+  if (resetTs) {
+    const mins = Math.ceil((resetTs - Date.now()) / 60000);
+    reset.textContent = mins > 0 ? `resets in ${mins}m` : '';
+  }
+
+  // Persist
+  try {
+    localStorage.setItem(LS_RATE, JSON.stringify({ remaining, total, resetTs: resetTs || null, ts: Date.now() }));
+  } catch (_) {}
+}
+
+function loadRateState() {
+  try {
+    const raw = localStorage.getItem(LS_RATE);
+    if (!raw) return;
+    const state = JSON.parse(raw);
+    // Expire if older than 1 hour
+    if (Date.now() - state.ts < 3600000) {
+      updateRateBar(state.remaining, state.total || RATE_LIMIT, state.resetTs);
+    }
+  } catch (_) {}
+}
+
+loadRateState();
+
+/* ============================================================
+   HISTORY
+   ============================================================ */
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_HISTORY) || '[]');
+  } catch (_) { return []; }
+}
+
+function saveHistory(items) {
+  try { localStorage.setItem(LS_HISTORY, JSON.stringify(items)); } catch (_) {}
+}
+
+function addHistoryEntry(entry) {
+  const items = loadHistory();
+  items.unshift(entry);
+  if (items.length > 20) items.splice(20);
+  saveHistory(items);
+  renderHistory();
+}
+
+function renderHistory() {
+  const items = loadHistory();
+  const list  = document.getElementById('historyList');
+  const empty = document.getElementById('historyEmpty');
+
+  if (items.length === 0) {
+    empty.style.display = 'block';
+    // Remove dynamic items
+    list.querySelectorAll('.history-item').forEach(el => el.remove());
+    return;
+  }
+  empty.style.display = 'none';
+  list.querySelectorAll('.history-item').forEach(el => el.remove());
+
+  items.forEach((item, idx) => {
+    const cls  = scoreClass(item.score);
+    const color = { 'score-green': 'var(--green)', 'score-yellow': 'var(--yellow)', 'score-orange': 'var(--orange)', 'score-red': 'var(--red)' }[cls] || 'var(--muted)';
+    const el = document.createElement('div');
+    el.className = 'history-item';
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('aria-label', `Restore analysis: ${item.preview}`);
+    el.innerHTML = `
+      <div class="history-score" style="border-color:${color};color:${color}">${item.score}</div>
+      <div class="history-info">
+        <div class="history-title">${escHtml(item.preview)}</div>
+        <div class="history-time">${item.riskLabel} &middot; ${relTime(item.ts)}</div>
+      </div>
+    `;
+    el.addEventListener('click', () => restoreHistory(idx));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') restoreHistory(idx); });
+    list.appendChild(el);
+  });
+}
+
+function restoreHistory(idx) {
+  const item = loadHistory()[idx];
+  if (!item) return;
+  if (item.text) {
+    switchTab('text');
+    document.getElementById('jobText').value = item.text;
+  } else if (item.url) {
+    switchTab('url');
+    document.getElementById('jobUrl').value = item.url;
+  }
+  if (item.result) {
+    renderResults(item.result, item.source || 'local');
+    document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function clearHistory() {
+  saveHistory([]);
+  renderHistory();
+}
+
+function relTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000)  return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return Math.floor(diff / 86400000) + 'd ago';
+}
+
+renderHistory();
+
+/* ============================================================
+   SAMPLE POSTINGS
+   ============================================================ */
+const SAMPLES = {
+  scam: `URGENT HIRING - Work From Home - No Experience Needed!
+
+We are a fast-growing company looking for motivated individuals to join our team immediately!
+Earn up to $1,000 per day working from home — guaranteed income every week!
+
+• No experience required — anyone can do this!
+• Set your own hours, unlimited earning potential
+• Be your own boss and achieve financial freedom
+
+To get started, you'll need to purchase your starter kit ($299) to cover training materials and equipment.
+Once hired, you'll receive a certified check — simply deposit it and send us $150 for processing fees.
+
+We also handle package shipments — you'll receive packages at your home and reship them to our clients.
+
+APPLY NOW — limited spots available! Offer expires TODAY.
+
+For faster processing, please send a copy of your ID and social security number along with your bank routing number to begin payroll setup.
+
+Don't miss this amazing opportunity!!!`,
+
+  safe: `Senior Software Engineer — Platform Infrastructure
+Acme Corp | Remote (US) | Full-time
+
+About Acme Corp:
+Founded in 2015, Acme Corp (NASDAQ: ACME) is a cloud infrastructure company trusted by 10,000+ businesses. Our team of 450 engineers builds the tools that power modern software delivery.
+
+Role Overview:
+We're looking for a Senior Software Engineer to join our Platform team. You'll own the design and implementation of our internal developer tooling, working closely with our SRE and product teams.
+
+Qualifications:
+• 5+ years of software engineering experience
+• Strong proficiency in Go or Rust
+• Experience with Kubernetes, Terraform
+• BS/MS in Computer Science or equivalent experience
+
+Interview Process:
+1. Initial phone screen (30 min) with recruiter
+2. Technical interview with engineering panel
+3. System design interview
+4. Reference check and background check
+
+Compensation: $160,000–$200,000 base salary
+Benefits: Health, dental, vision insurance; 401(k) with 4% match; 20 days PTO; parental leave; equity
+
+Apply at careers.acmecorp.com — no recruiters please.`
+};
+
+function loadSample(type) {
+  switchTab('text');
+  document.getElementById('jobText').value = SAMPLES[type] || '';
+  document.getElementById('jobText').focus();
+}
+
+/* ============================================================
+   CLIENT-SIDE SIGNALS  (mirrored from app.js)
+   ============================================================ */
+const SIGNALS = [
+  { id: 'upfront_payment',      label: 'Upfront Payment Required',       category: 'red_flag',  weight: 35, keywords: ['pay a fee','upfront fee','registration fee','starter kit','initial deposit','purchase equipment','buy your kit','send money','wire transfer','pay to start','investment required','fee to apply'] },
+  { id: 'ssn_early',            label: 'SSN / Bank Info Requested',       category: 'red_flag',  weight: 40, keywords: ['social security','ssn','bank account number','routing number','credit card number','wire funds','western union','money order','zelle','venmo','cash app'] },
+  { id: 'guaranteed_income',    label: 'Guaranteed Income Claims',        category: 'red_flag',  weight: 30, keywords: ['guaranteed income','guaranteed salary','earn up to','make $1000','make $500 a day','earn thousands','six figures guaranteed','unlimited earning potential','financial freedom','passive income stream'] },
+  { id: 'work_from_home_easy',  label: 'Unrealistic Remote Promise',      category: 'red_flag',  weight: 20, keywords: ['work from home no experience','no experience needed','no skills required','be your own boss','set your own hours unlimited','anyone can do this','no interviews required'] },
+  { id: 'urgency_pressure',     label: 'High-Pressure Urgency',           category: 'red_flag',  weight: 22, keywords: ['act now','limited spots','apply immediately','offer expires today','don\'t miss out','hurry','urgent hiring','instant hire','hired on the spot','no waiting'] },
+  { id: 'personal_info',        label: 'Excessive Personal Info Demand',  category: 'red_flag',  weight: 28, keywords: ['copy of id','copy of passport','birth certificate','background check fee','credit check fee','send a photo','selfie with id'] },
+  { id: 'check_cashing',        label: 'Check Cashing Scheme',            category: 'red_flag',  weight: 38, keywords: ['cash this check','deposit check','overpayment check','cashier\'s check','certified check','money order deposit','keep a portion','send the remainder'] },
+  { id: 'mlm_pyramid',          label: 'MLM / Pyramid Structure',         category: 'red_flag',  weight: 32, keywords: ['recruit others','build your team','downline','upline','network marketing','multi-level','mlm','direct sales opportunity','residual income','commission-only recruiting'] },
+  { id: 'vague_company',        label: 'Vague Company Description',       category: 'warning',   weight: 15, keywords: ['fast-growing company','leading company','well-known company','anonymous company','confidential employer','global firm','dynamic team','exciting opportunity'] },
+  { id: 'salary_mismatch',      label: 'Unusually High Salary Claim',     category: 'warning',   weight: 18, keywords: ['$5000 per week','$10000 per week','$500 per hour','$1000 per day','top pay','exceptional pay','high compensation','above industry standard'] },
+  { id: 'grammar_issues',       label: 'Spelling / Grammar Issues',       category: 'warning',   weight: 12, keywords: [] },
+  { id: 'reshipping',           label: 'Reshipping / Package Handling',   category: 'warning',   weight: 25, keywords: ['reship','re-ship','package handler','parcel forwarder','receive packages','forward packages','shipping manager','package inspector','mystery shopper','secret shopper'] },
+  { id: 'crypto_payment',       label: 'Cryptocurrency Payment',          category: 'warning',   weight: 20, keywords: ['bitcoin','ethereum','crypto payment','paid in crypto','usdt','cryptocurrency','blockchain payment','nft'] },
+  { id: 'evergreen_posting',    label: 'Perpetually Open Role',           category: 'ghost_job', weight: 10, keywords: ['always hiring','continuously hiring','ongoing opportunity','rolling applications','open until filled','pool of candidates'] },
+  { id: 'no_contact_info',      label: 'No Direct Contact',               category: 'ghost_job', weight: 8,  keywords: ['do not call','no phone calls','no emails please','apply through portal only','no inquiries'] },
+  { id: 'no_qualifications',    label: 'No Qualifications Listed',        category: 'structural', weight: 12, keywords: ['no qualifications needed','no degree required','no resume','no references','all backgrounds welcome','no background check'] },
+  { id: 'company_details',      label: 'Detailed Company Info',           category: 'positive',  weight: -15, keywords: ['founded in','our team of','series a','series b','series c','publicly traded','nasdaq','nyse','fortune 500','inc 5000','registered company','verified employer'] },
+  { id: 'structured_interview', label: 'Structured Interview Process',    category: 'positive',  weight: -12, keywords: ['phone screen','technical interview','background check required','reference check','offer letter','sign offer','onboarding'] },
+  { id: 'benefits_listed',      label: 'Legitimate Benefits',             category: 'positive',  weight: -10, keywords: ['health insurance','dental','vision','401k','401(k)','pto','paid time off','parental leave','stock options','equity'] },
+];
+
+function detectGrammarIssues(text) {
+  let score = 0;
+  if ((text.match(/!!+/g) || []).length > 0) score += 3;
+  if ((text.match(/\?\?+/g) || []).length > 0) score += 3;
+  const words = text.split(/\s+/);
+  const allCaps = words.filter(w => w.length > 3 && w === w.toUpperCase() && /[A-Z]/.test(w));
+  if (allCaps.length > 3) score += 5;
+  const sentences = text.split(/[.!?]/);
+  const runOns = sentences.filter(s => s.split(' ').length > 55);
+  score += runOns.length * 3;
+  return score >= 5;
+}
+
+function runClientSide(text) {
+  const lower = text.toLowerCase();
+  const triggered = [];
+
+  SIGNALS.forEach(sig => {
+    if (sig.id === 'grammar_issues') {
+      if (detectGrammarIssues(text)) {
+        triggered.push({ ...sig, evidence: 'Excessive caps, punctuation, or run-on sentences detected', detail: 'Grammar heuristic' });
+      }
+      return;
+    }
+    const hit = sig.keywords.find(kw => lower.includes(kw.toLowerCase()));
+    if (hit) triggered.push({ ...sig, evidence: `Matched phrase: "${hit}"`, detail: hit });
+  });
+
+  let rawScore = 0;
+  triggered.forEach(s => { rawScore += s.weight; });
+  const scamScore = Math.max(0, Math.min(100, rawScore));
+  const pct = scamScore / 100;
+
+  const redFlags         = triggered.filter(s => s.category === 'red_flag');
+  const warnings         = triggered.filter(s => s.category === 'warning');
+  const ghostIndicators  = triggered.filter(s => s.category === 'ghost_job');
+  const positiveSignals  = triggered.filter(s => s.category === 'positive');
+  const structural       = triggered.filter(s => s.category === 'structural');
+
+  const riskLevel = scamScore >= 65 ? 'high' : scamScore >= 40 ? 'suspicious' : scamScore >= 20 ? 'low' : 'safe';
+  const riskLabels = { safe: 'Likely Safe', low: 'Low Risk', suspicious: 'Suspicious', high: 'High Risk — Likely Scam' };
+
+  return {
+    scam_score:       pct,
+    confidence:       Math.min(0.95, 0.3 + triggered.length * 0.1),
+    risk_level:       riskLevel,
+    risk_label:       riskLabels[riskLevel],
+    red_flags:        redFlags.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
+    warnings:         warnings.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
+    ghost_indicators: ghostIndicators.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
+    positive_signals: positiveSignals.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
+    structural:       structural.map(s => ({ name: s.label, detail: s.category, evidence: s.evidence })),
+    signal_count:     triggered.length,
+    analysis_time_ms: 0,
+    source:           'client-side',
+    _triggered:       triggered,   // keep raw for weight display
+  };
+}
+
+/* ============================================================
+   MAIN ANALYZE HANDLER
+   ============================================================ */
+async function handleAnalyze() {
+  const btn  = document.getElementById('analyzeBtn');
+  const area = document.getElementById('resultsArea');
+
+  // Gather input
+  let text = '', url = '';
+  if (activeTab === 'text') {
+    text = document.getElementById('jobText').value.trim();
+    if (text.length < 30) {
+      showNotice(area, 'warn', '⚠', 'Please paste a job description (at least 30 characters) before analyzing.');
+      return;
+    }
+  } else {
+    url = document.getElementById('jobUrl').value.trim();
+    if (!url.startsWith('http')) {
+      showNotice(area, 'warn', '⚠', 'Please enter a valid URL (starting with http:// or https://).');
+      return;
+    }
+  }
+
+  // Start loading
+  btn.classList.add('loading');
+  btn.disabled = true;
+  area.innerHTML = '';
+
+  let result = null;
+  let source = 'client-side';
+
+  // Try API first
+  try {
+    const payload = text ? { text } : { url };
+    const resp = await fetchWithTimeout(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body:    JSON.stringify(payload),
+    }, 8000);
+
+    if (resp.ok) {
+      result = await resp.json();
+      source = result.source || 'api';
+
+      // Parse rate limit headers
+      const remaining = parseInt(resp.headers.get('X-RateLimit-Remaining') || resp.headers.get('RateLimit-Remaining') || '-1', 10);
+      const limit     = parseInt(resp.headers.get('X-RateLimit-Limit')     || resp.headers.get('RateLimit-Limit')     || RATE_LIMIT, 10);
+      const resetHdr  = resp.headers.get('X-RateLimit-Reset') || resp.headers.get('RateLimit-Reset');
+      const resetTs   = resetHdr ? parseInt(resetHdr, 10) * 1000 : null;
+
+      if (remaining >= 0) {
+        updateRateBar(remaining, limit, resetTs);
+      }
+    } else if (resp.status === 429) {
+      showNotice(area, 'warn', '⏱', 'API rate limit reached. Falling back to client-side analysis.');
+      result = runClientSide(text || url);
+      updateRateBar(0, RATE_LIMIT, null);
+    } else {
+      throw new Error(`API returned ${resp.status}`);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      // Show fallback notice only if there's text to analyze
+      if (text) {
+        showNotice(area, 'warn', '📡', 'API unreachable — running client-side analysis. Results may be less comprehensive.');
+      } else {
+        showNotice(area, 'err', '⚠', 'Cannot analyze a URL without the API. Please paste the job description text instead.');
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        return;
+      }
+    }
+    if (text) {
+      result = runClientSide(text);
+    }
+  }
+
+  btn.classList.remove('loading');
+  btn.disabled = false;
+
+  if (!result) return;
+
+  // Save to history
+  const preview = (text || url).split('\n')[0].slice(0, 60) || 'Job posting';
+  const score   = Math.round((result.scam_score || 0) * 100);
+  addHistoryEntry({
+    ts:        Date.now(),
+    preview,
+    score,
+    riskLabel: result.risk_label || '',
+    source,
+    text:      text || null,
+    url:       url  || null,
+    result,
+  });
+
+  renderResults(result, source);
+  document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ============================================================
+   RENDER RESULTS
+   ============================================================ */
+function renderResults(result, source) {
+  const area  = document.getElementById('resultsArea');
+  const score = Math.round((result.scam_score || 0) * 100);
+  const conf  = Math.round((result.confidence || 0) * 100);
+  const cls   = scoreClass(score);
+  const color = { 'score-green': 'var(--green)', 'score-yellow': 'var(--yellow)', 'score-orange': 'var(--orange)', 'score-red': 'var(--red)' }[cls];
+
+  const srcLabel  = sourceLabel(source);
+  const srcClass  = sourceClass(source);
+  const timeStr   = result.analysis_time_ms != null && result.analysis_time_ms > 0
+    ? `${result.analysis_time_ms.toFixed(1)}ms` : null;
+
+  // Update source indicator in header
+  const srcBadge = document.getElementById('sourceIndicator');
+  srcBadge.style.display = 'inline-flex';
+  srcBadge.className     = `source-badge ${srcClass}`;
+  srcBadge.textContent   = srcLabel;
+
+  // Score card
+  const metaParts = [
+    `${result.signal_count ?? '?'} signals`,
+    conf > 0 ? `${conf}% confidence` : null,
+    timeStr,
+  ].filter(Boolean).join(' · ');
+
+  let html = `
+    <div class="result-score-card">
+      <div class="result-score-top">
+        <div class="score-circle-lg ${cls}" style="border-color:${color};color:${color}" aria-label="Risk score: ${score} out of 100">
+          <span class="score-num">${score}</span>
+          <span class="score-denom">/ 100</span>
+        </div>
+        <div class="score-info">
+          <div class="score-risk-label" style="color:${color}">${escHtml(result.risk_label || riskLabelFallback(score))}</div>
+          <div class="score-risk-detail">${escHtml(riskDetail(score))}</div>
+          <div class="score-meta-row">
+            <span>${metaParts}</span>
+            <span class="score-meta-sep">·</span>
+            <span class="source-badge ${srcClass}">${srcLabel}</span>
+          </div>
+        </div>
+      </div>
+
+      ${conf > 0 ? `
+      <div class="confidence-bar-wrap">
+        <div class="confidence-label"><span>Confidence</span><strong>${conf}%</strong></div>
+        <div class="confidence-track"><div class="confidence-fill" style="width:${conf}%;background:${color}"></div></div>
+      </div>` : ''}
+
+      <div class="result-actions">
+        <button class="btn btn-secondary btn-sm" onclick="copyResults()" aria-label="Copy result summary">📋 Copy Summary</button>
+        <div class="spacer"></div>
+        <div class="report-btns" aria-label="Report this posting">
+          <label>Report as:</label>
+          <button class="report-btn report-scam" onclick="reportPosting('scam', this)" aria-label="Report as scam">🚨 Scam</button>
+          <button class="report-btn report-legit" onclick="reportPosting('legitimate', this)" aria-label="Report as legitimate">✓ Legitimate</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Signal sections
+  const sections = [
+    { key: 'red_flags',         icon: '🚨', title: 'Red Flags',          cat: 'red_flag',   dotCls: 'sig-red',    catCls: 'cat-red_flag' },
+    { key: 'warnings',          icon: '⚠️',  title: 'Warnings',           cat: 'warning',    dotCls: 'sig-orange', catCls: 'cat-warning' },
+    { key: 'ghost_indicators',  icon: '👻', title: 'Ghost Job Indicators', cat: 'ghost_job', dotCls: 'sig-yellow', catCls: 'cat-ghost' },
+    { key: 'structural',        icon: '🔩', title: 'Structural Issues',   cat: 'structural', dotCls: 'sig-blue',   catCls: 'cat-structural' },
+    { key: 'positive_signals',  icon: '✅', title: 'Positive Signals',    cat: 'positive',   dotCls: 'sig-green',  catCls: 'cat-positive' },
+  ];
+
+  // Build weight lookup from raw triggered signals if available
+  const weightMap = {};
+  if (result._triggered) {
+    result._triggered.forEach(s => { weightMap[s.name] = s.weight; });
+  }
+
+  sections.forEach(sec => {
+    const signals = result[sec.key] || [];
+    const count   = signals.length;
+    if (count === 0 && sec.key !== 'positive_signals') return; // omit empty negative sections; always show positive
+
+    html += `
+      <div class="signal-section">
+        <div class="signal-section-header">
+          <span class="signal-section-icon">${sec.icon}</span>
+          <span class="signal-section-title">${sec.title}</span>
+          <span class="signal-section-count">${count}</span>
+        </div>
+        <div class="signal-section-body">
+    `;
+
+    if (count === 0) {
+      html += `<div class="empty-section">No ${sec.title.toLowerCase()} detected.</div>`;
+    } else {
+      signals.forEach(sig => {
+        const w         = weightMap[sig.name];
+        const wDisplay  = w != null ? (w > 0 ? `+${w}` : `${w}`) : null;
+        const wStyle    = w != null ? weightBg(w) : '';
+        html += `
+          <div class="signal-row">
+            <span class="signal-row-dot ${sec.dotCls}"></span>
+            <div class="signal-row-body">
+              <div class="signal-row-name">${escHtml(sig.name || '')}</div>
+              <div class="signal-row-evidence">${escHtml(sig.evidence || sig.detail || '')}</div>
+            </div>
+            <span class="signal-row-cat ${sec.catCls}">${escHtml(sec.cat.replace('_', ' '))}</span>
+            ${wDisplay != null ? `<span class="signal-row-weight" style="${wStyle}">${wDisplay}</span>` : ''}
+          </div>`;
+      });
+    }
+
+    html += `</div></div>`;
+  });
+
+  // Store result for copy
+  window._lastResult = result;
+  window._lastScore  = score;
+
+  area.innerHTML = html;
+}
+
+/* ============================================================
+   REPORT
+   ============================================================ */
+async function reportPosting(verdict, btn) {
+  if (btn.classList.contains('reported')) return;
+  btn.classList.add('reported');
+  btn.textContent = verdict === 'scam' ? '🚨 Reported' : '✓ Reported';
+
+  try {
+    await fetchWithTimeout(API_URL.replace('/analyze', '/report'), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict, result: window._lastResult }),
+    }, 5000);
+  } catch (_) {
+    // Silently fail — local feedback is enough
+  }
+}
+
+/* ============================================================
+   COPY SUMMARY
+   ============================================================ */
+function copyResults() {
+  if (!window._lastResult) return;
+  const r     = window._lastResult;
+  const score = window._lastScore ?? Math.round((r.scam_score || 0) * 100);
+  const lines = [
+    `JobSentinel Analysis`,
+    `Risk Score: ${score}/100 — ${r.risk_label || ''}`,
+    `Confidence: ${Math.round((r.confidence || 0) * 100)}%`,
+    `Signals: ${r.signal_count ?? '?'}`,
+    `Source: ${r.source || 'unknown'}`,
+    '',
+    ...(r.red_flags || []).map(s  => `🚨 ${s.name}`),
+    ...(r.warnings  || []).map(s  => `⚠  ${s.name}`),
+    ...(r.ghost_indicators || []).map(s => `👻 ${s.name}`),
+    ...(r.positive_signals || []).map(s => `✓  ${s.name}`),
+    '',
+    `Analyzed by JobSentinel — https://jobsentinel.org/analyze`,
+  ];
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
+    const origBtn = document.querySelector('[onclick="copyResults()"]');
+    if (origBtn) {
+      const orig = origBtn.textContent;
+      origBtn.textContent = '✓ Copied!';
+      origBtn.style.color = 'var(--green)';
+      setTimeout(() => { origBtn.textContent = orig; origBtn.style.color = ''; }, 2000);
+    }
+  });
+}
+
+/* ============================================================
+   CLEAR
+   ============================================================ */
+function clearAll() {
+  document.getElementById('jobText').value  = '';
+  document.getElementById('jobUrl').value   = '';
+  document.getElementById('resultsArea').innerHTML = '';
+  document.getElementById('sourceIndicator').style.display = 'none';
+  window._lastResult = null;
+}
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+function fetchWithTimeout(url, opts, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showNotice(container, type, icon, msg) {
+  const typeClass = { warn: 'notice-warn', err: 'notice-err', info: 'notice-info' }[type] || 'notice-info';
+  const el = document.createElement('div');
+  el.className = `notice ${typeClass}`;
+  el.innerHTML = `<span class="notice-icon">${icon}</span><span class="notice-body">${escHtml(msg)}</span>`;
+  container.prepend(el);
+}
+
+function scoreClass(score) {
+  if (score >= 65) return 'score-red';
+  if (score >= 40) return 'score-orange';
+  if (score >= 20) return 'score-yellow';
+  return 'score-green';
+}
+
+function riskLabelFallback(score) {
+  if (score >= 65) return 'High Risk';
+  if (score >= 40) return 'Suspicious';
+  if (score >= 20) return 'Low Risk';
+  return 'Likely Safe';
+}
+
+function riskDetail(score) {
+  if (score >= 65) return 'Multiple strong scam indicators detected. Do not provide personal information or payment.';
+  if (score >= 40) return 'Several warning signs present. Research this employer independently before proceeding.';
+  if (score >= 20) return 'Minor red flags detected. Verify the employer exists and is reputable before applying.';
+  return 'No significant scam signals detected. Standard job search precautions still apply.';
+}
+
+function sourceLabel(src) {
+  if (!src || src === 'client-side' || src === 'local') return 'Client-side';
+  if (src.includes('worker') || src.includes('cloudflare')) return 'API';
+  if (src.includes('api')) return 'API';
+  return src;
+}
+
+function sourceClass(src) {
+  const label = sourceLabel(src);
+  if (label === 'API') return 'source-api';
+  if (label === 'Client-side') return 'source-local';
+  return 'source-offline';
+}
+
+function weightBg(w) {
+  if (w < 0)   return 'background:rgba(63,185,80,.15);color:var(--green)';
+  if (w >= 30) return 'background:rgba(248,81,73,.15);color:var(--red)';
+  if (w >= 18) return 'background:rgba(219,109,40,.15);color:var(--orange)';
+  return 'background:rgba(210,153,34,.12);color:var(--yellow)';
+}
+
+/* ============================================================
+   KEYBOARD: Ctrl+Enter to analyze
+   ============================================================ */
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    handleAnalyze();
+  }
+});
+
+/* ============================================================
+   SCROLL REVEAL (match index.html behavior)
+   ============================================================ */
+const revealObserver = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.classList.add('visible'); revealObserver.unobserve(e.target); }
+  });
+}, { threshold: 0.12 });
+document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+// Expose globals
+window.handleAnalyze  = handleAnalyze;
+window.clearAll       = clearAll;
+window.loadSample     = loadSample;
+window.switchTab      = switchTab;
+window.clearHistory   = clearHistory;
+window.reportPosting  = reportPosting;
+window.copyResults    = copyResults;
+</script>
+</body>
+</html>

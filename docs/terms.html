@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="JobSentinel Terms of Service — usage terms for the job scam detection platform." />
+  <title>Terms of Service — JobSentinel</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
+  <style>
+    .legal-content { max-width: 760px; margin: 0 auto; }
+    .legal-content h2 { font-size: 1.4rem; margin-top: 40px; margin-bottom: 12px; }
+    .legal-content h3 { font-size: 1.1rem; margin-top: 28px; margin-bottom: 8px; color: var(--accent); }
+    .legal-content p, .legal-content li { font-size: .9rem; color: var(--muted); line-height: 1.7; }
+    .legal-content ul, .legal-content ol { padding-left: 24px; }
+    .legal-content ul { list-style: disc; }
+    .legal-content ol { list-style: decimal; }
+    .legal-content li { margin-bottom: 6px; }
+    .legal-hero { padding: 60px 0 20px; text-align: center; border-bottom: 1px solid var(--border); }
+    .legal-hero h1 { font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 800; margin-bottom: 8px; }
+    .legal-hero p { color: var(--muted); font-size: .95rem; }
+    .legal-section { padding: 40px 0 80px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo"><span class="nav-logo-icon">🛡</span><span>JobSentinel</span></a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="analyze.html">Analyze</a></li>
+      <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" aria-label="Toggle menu">☰</button>
+  </div>
+</nav>
+
+<div class="legal-hero">
+  <div class="container">
+    <h1>Terms of Service</h1>
+    <p>Last updated: May 1, 2026</p>
+  </div>
+</div>
+
+<section class="legal-section">
+  <div class="container legal-content">
+
+    <h2>1. Acceptance</h2>
+    <p>By using JobSentinel (the website, API, browser extension, or CLI tool), you agree to these terms. If you do not agree, do not use the service.</p>
+
+    <h2>2. Service Description</h2>
+    <p>JobSentinel is a free, open-source tool that analyzes job postings for scam indicators. It provides a risk score and signal breakdown to help you make informed decisions about job opportunities. JobSentinel is <strong>not</strong> a guarantee — it is a decision-support tool.</p>
+
+    <h2>3. No Warranty</h2>
+    <ul>
+      <li>JobSentinel is provided <strong>"as is"</strong> without warranty of any kind.</li>
+      <li>We do not guarantee the accuracy, completeness, or reliability of scam detection results.</li>
+      <li>A low risk score does not guarantee a job posting is legitimate. A high risk score does not guarantee it is a scam.</li>
+      <li>Always perform your own due diligence before applying to any job or sharing personal information.</li>
+    </ul>
+
+    <h2>4. Acceptable Use</h2>
+    <p>You agree to:</p>
+    <ul>
+      <li>Use the service only for analyzing job postings for personal safety purposes.</li>
+      <li>Not exceed the rate limit (10 requests/minute for the web API).</li>
+      <li>Not submit malicious input (scripts, exploits, or intentionally crafted payloads).</li>
+      <li>Not use the API for automated mass scraping or data collection.</li>
+      <li>Not impersonate JobSentinel or misrepresent analysis results as official determinations.</li>
+    </ul>
+
+    <h2>5. User Reports</h2>
+    <p>When you submit a report (marking a posting as scam or legitimate), you grant JobSentinel a non-exclusive, royalty-free license to use that report to improve detection accuracy. Reports should be honest and in good faith.</p>
+
+    <h2>6. Rate Limits</h2>
+    <ul>
+      <li><strong>Web API:</strong> 10 requests per minute per IP address.</li>
+      <li><strong>Browser extension:</strong> Subject to the same API rate limits.</li>
+      <li><strong>CLI tool:</strong> No rate limits when running locally.</li>
+    </ul>
+    <p>Exceeding rate limits will result in HTTP 429 responses. Persistent abuse may result in temporary IP blocks.</p>
+
+    <h2>7. Open Source License</h2>
+    <p>The JobSentinel software is released under the <a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>. You are free to use, modify, and distribute the software according to that license. These Terms of Service govern the hosted service at jobsentinel.org and api.jobsentinel.org, not the open-source software itself.</p>
+
+    <h2>8. Limitation of Liability</h2>
+    <p>To the maximum extent permitted by law, JobSentinel and its contributors shall not be liable for any damages arising from your use of the service, including but not limited to:</p>
+    <ul>
+      <li>Financial losses from relying on scam detection results.</li>
+      <li>Missed job opportunities due to false positive scam alerts.</li>
+      <li>Data loss or service interruptions.</li>
+    </ul>
+
+    <h2>9. Service Availability</h2>
+    <p>JobSentinel is a free, community-maintained project. We make no guarantees about uptime, availability, or response times. The service may be modified, suspended, or discontinued at any time without notice.</p>
+
+    <h2>10. Changes</h2>
+    <p>We may update these terms as the service evolves. Continued use of the service after changes constitutes acceptance of the new terms. Changes will be committed to the <a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub repository</a>.</p>
+
+    <h2>11. Contact</h2>
+    <p>Questions? Open an issue on <a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">GitHub</a> or email <a href="mailto:ericrihm@gmail.com">ericrihm@gmail.com</a>.</p>
+
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-bottom">
+      <p>&copy; 2025 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+const toggle = document.querySelector('.nav-mobile-toggle');
+const navLinks = document.querySelector('.nav-links');
+toggle?.addEventListener('click', () => navLinks?.classList.toggle('open'));
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JobSentinel — Settings</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="options-body">
+
+  <!-- Header -->
+  <header class="options-header">
+    <span class="popup-logo">🛡</span>
+    <span class="options-title">JobSentinel Settings</span>
+  </header>
+
+  <!-- API Settings -->
+  <section class="options-section">
+    <div class="options-section-title">API Configuration</div>
+
+    <div class="options-row">
+      <div class="options-label">
+        API Endpoint
+        <div class="options-sublabel">Where to send job analysis requests</div>
+      </div>
+      <input
+        id="input-api-base"
+        type="url"
+        class="options-input"
+        placeholder="https://api.jobsentinel.org"
+        spellcheck="false"
+        autocomplete="off"
+      />
+    </div>
+
+    <div class="options-row">
+      <div class="options-label">
+        Rate Limit Info
+      </div>
+      <div class="options-info-box" style="flex:1">
+        The public API at <strong>api.jobsentinel.org</strong> allows
+        <strong>60 requests / hour</strong> per IP.
+        If the API is unreachable the extension automatically falls back
+        to <strong>client-side detection</strong> — no quota consumed.
+        <br><br>
+        Self-hosting? Run <code>sentinel serve</code> and point the endpoint
+        above at your local instance.
+      </div>
+    </div>
+  </section>
+
+  <!-- Scan Settings -->
+  <section class="options-section">
+    <div class="options-section-title">Scan Behaviour</div>
+
+    <div class="options-row">
+      <div class="options-label">
+        Auto-scan job pages
+        <div class="options-sublabel">Automatically analyze every LinkedIn job you open</div>
+      </div>
+      <label class="toggle">
+        <input id="toggle-auto-scan" type="checkbox" checked />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </section>
+
+  <!-- Cache -->
+  <section class="options-section">
+    <div class="options-section-title">Cache</div>
+
+    <div class="options-row">
+      <div class="options-label">
+        Result cache
+        <div class="options-sublabel">Analysis results are cached for 24 hours to avoid redundant API calls</div>
+      </div>
+      <button id="btn-clear-cache" class="btn btn--danger" style="flex-shrink:0">
+        Clear Cache
+      </button>
+    </div>
+
+    <div id="cache-status" class="options-status"></div>
+  </section>
+
+  <!-- Save -->
+  <section class="options-section" style="text-align:center">
+    <button id="btn-save" class="btn btn--primary" style="min-width:120px">Save Settings</button>
+    <div id="save-status" class="options-status"></div>
+  </section>
+
+  <script src="options.js"></script>
+</body>
+</html>
