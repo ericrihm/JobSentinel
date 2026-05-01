@@ -309,16 +309,89 @@ class InnovationEngine:
         return ImprovementResult("false_positive_review", False, "Could not identify FP-causing signals")
 
     def _review_false_negatives(self, baseline: float) -> ImprovementResult:
-        """Find scams we missed and analyze what signals could catch them."""
-        reports = self.db.get_reports(limit=100)
+        """Find scams we missed and mine new candidate patterns from their text."""
+        reports = self.db.get_reports(limit=200)
         fns = [r for r in reports if r.get("is_scam") and r.get("our_prediction", 0) < 0.5]
 
         if not fns:
             return ImprovementResult("false_negative_review", False, "No false negatives found")
 
+        # Gather description text from the missed scam jobs
+        fn_texts: list[str] = []
+        for r in fns:
+            url = r.get("url", "")
+            if not url:
+                continue
+            job = self.db.get_job(url)
+            if job:
+                desc = job.get("description", "")
+                reason = r.get("reason", "")
+                if desc:
+                    fn_texts.append(desc)
+                elif reason:
+                    fn_texts.append(reason)
+
+        if not fn_texts:
+            return ImprovementResult(
+                "false_negative_review", True,
+                f"Found {len(fns)} missed scams but no job text available for mining",
+            )
+
+        # Tokenize and find high-frequency terms not in existing patterns
+        word_freq: Counter = Counter()
+        for text in fn_texts:
+            words = set(re.findall(r"[a-z]{3,}", text.lower())) - _STOPWORDS
+            word_freq.update(words)
+
+        existing_keywords: set[str] = set()
+        for status in ("active", "candidate"):
+            for pattern in self.db.get_patterns(status=status):
+                kw_raw = pattern.get("keywords") or pattern.get("keywords_json", "[]")
+                if isinstance(kw_raw, str):
+                    try:
+                        kw_list = json.loads(kw_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        kw_list = []
+                else:
+                    kw_list = kw_raw
+                for kw in kw_list:
+                    existing_keywords.add(kw.lower().strip())
+
+        # Find terms appearing in 40%+ of missed scams that aren't already covered
+        threshold = max(2, len(fn_texts) * 0.4)
+        new_terms = [
+            (word, count) for word, count in word_freq.most_common(30)
+            if count >= threshold and word not in existing_keywords and len(word) > 3
+        ]
+
+        if not new_terms:
+            return ImprovementResult(
+                "false_negative_review", True,
+                f"Found {len(fns)} missed scams — no new high-frequency terms to mine",
+            )
+
+        # Create candidate pattern from top terms
+        top_keywords = [w for w, _ in new_terms[:8]]
+        pattern_id = f"fn_review_{uuid.uuid4().hex[:8]}"
+        self.db.save_pattern({
+            "pattern_id": pattern_id,
+            "name": f"fn_mined_{'_'.join(top_keywords[:3])}",
+            "description": f"Mined from {len(fns)} false negatives ({len(fn_texts)} with text)",
+            "category": "red_flag",
+            "regex": "",
+            "keywords_json": json.dumps(top_keywords),
+            "alpha": 1.0,
+            "beta": 1.0,
+            "observations": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "status": "candidate",
+        })
+
         return ImprovementResult(
             "false_negative_review", True,
-            f"Found {len(fns)} missed scams — analysis available for new signal development",
+            f"Mined {len(top_keywords)} terms from {len(fns)} missed scams → candidate pattern '{pattern_id}'",
+            new_patterns=1,
         )
 
     def _optimize_weights(self, baseline: float) -> ImprovementResult:
@@ -637,24 +710,31 @@ class InnovationEngine:
         )
 
     def _tune_thresholds(self, baseline: float) -> ImprovementResult:
-        """Tune risk classification thresholds based on user feedback."""
-        stats = self.flywheel.compute_accuracy()
-        precision = stats.get("precision", 0)
-        recall = stats.get("recall", 0)
+        """Tune risk classification thresholds using calibration-based auto-adjustment."""
+        result = self.flywheel.auto_adjust_thresholds()
 
-        if precision > 0.9 and recall < 0.7:
+        if result.get("skipped"):
             return ImprovementResult(
-                "threshold_tuning", True,
-                f"Precision high ({precision:.0%}) but recall low ({recall:.0%}) — lower thresholds recommended",
+                "threshold_tuning", False,
+                "No calibration data available for threshold tuning",
             )
-        elif recall > 0.9 and precision < 0.7:
+
+        adjusted = result.get("adjusted", [])
+        ece_before = result.get("ece_before", 0.0)
+
+        if not adjusted:
+            stats = self.flywheel.compute_accuracy()
+            precision = stats.get("precision", 0)
+            recall = stats.get("recall", 0)
             return ImprovementResult(
-                "threshold_tuning", True,
-                f"Recall high ({recall:.0%}) but precision low ({precision:.0%}) — raise thresholds recommended",
+                "threshold_tuning", False,
+                f"Thresholds within tolerance (ECE={ece_before:.4f}, precision={precision:.0%}, recall={recall:.0%})",
             )
+
+        details = [f"{a['threshold']}: {a['old_value']:.4f}→{a['new_value']:.4f}" for a in adjusted]
         return ImprovementResult(
-            "threshold_tuning", False,
-            f"Thresholds balanced: precision={precision:.0%} recall={recall:.0%}",
+            "threshold_tuning", True,
+            f"Adjusted {len(adjusted)} thresholds (ECE was {ece_before:.4f}): {', '.join(details)}",
         )
 
     def _evaluate_source_quality(self, baseline: float) -> ImprovementResult:

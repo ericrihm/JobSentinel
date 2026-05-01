@@ -139,16 +139,21 @@ class CUSUMDetector:
         self.slack = slack         # allowable slack (half the tolerated shift)
         self.threshold = threshold # alarm threshold (h)
         self._s_neg: float = 0.0   # lower CUSUM statistic
+        self.alarm_fired: bool = False
 
     def update(self, value: float) -> bool:
         """Return True if a regression alarm is raised."""
         # Normalised deviation: positive = improvement, negative = regression
         deviation = value - (self.target - self.slack)
         self._s_neg = max(0.0, self._s_neg - deviation)
-        return self._s_neg >= self.threshold
+        if self._s_neg >= self.threshold:
+            self.alarm_fired = True
+            return True
+        return False
 
     def reset(self) -> None:
         self._s_neg = 0.0
+        self.alarm_fired = False
 
     @property
     def statistic(self) -> float:
@@ -933,7 +938,7 @@ class DetectionFlywheel:
             try:
                 from sentinel.innovation import InnovationEngine
                 engine = InnovationEngine(db=self.db)
-                engine._run_pattern_mining()
+                engine._mine_patterns(0.0)
                 logger.info(
                     "Input drift detected (score=%.4f) — pattern mining triggered.",
                     drift_score,
