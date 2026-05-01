@@ -208,8 +208,10 @@ class SentinelDB:
 
     def search_jobs(self, query: str, limit: int = 20) -> list[dict]:
         """Full-text search over title, company, and description via FTS5."""
-        # Escape special FTS characters to avoid query errors on raw input
-        safe_query = query.replace('"', '""')
+        # Wrap as an FTS5 phrase so special characters (-, ", :, *) are
+        # treated as literals rather than operators. Doubled quotes inside
+        # the phrase escape an embedded quote per FTS5 syntax.
+        safe_query = '"' + query.replace('"', '""') + '"'
         rows = self.conn.execute(
             """
             SELECT j.*

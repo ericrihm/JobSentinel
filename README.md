@@ -4,7 +4,7 @@
 # JobSentinel
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-393%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-400%20passing-brightgreen.svg)](#development)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-purple.svg)](https://github.com/astral-sh/ruff)
 
@@ -334,13 +334,13 @@ python -m pytest tests/test_security.py -v
 ruff check sentinel/
 ```
 
-**393 tests** across 14 test files covering:
+**400 tests** across 14 test files covering:
 
 | Test File | What It Covers |
 |-----------|---------------|
 | `test_core.py` | Models, signals, scorer, scanner, validator, DB, knowledge |
 | `test_advanced.py` | Innovation engine, ecosystem integration |
-| `test_security.py` | Input validation, injection prevention, HTML sanitization |
+| `test_security.py` | Input validation, SQL parameter safety, command/HTML injection prevention |
 | `test_flywheel_integration.py` | Learned weight propagation, full scoring loop |
 | `test_config.py` | TOML config loading, defaults, singleton |
 | `test_schema_and_dates.py` | DB schema migration, date format parsing |

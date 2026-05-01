@@ -395,6 +395,7 @@ def parse_job_text(
     Extracts: salary, location, experience level, employment type, remote status,
     posted date, applicant count, and recruiter name via regex.
     """
+    text = _sanitize_html(text)
     sal_min, sal_max, currency = extract_salary(text)
     location = extract_location(text)
     experience = detect_experience_level(text)
