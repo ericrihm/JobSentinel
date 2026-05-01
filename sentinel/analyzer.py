@@ -8,6 +8,12 @@ from sentinel.models import JobPosting, RiskLevel, ScamSignal, ValidationResult
 from sentinel.scorer import build_result
 from sentinel.signals import extract_signals
 
+try:
+    from sentinel.signals import extract_signals_with_graph as _extract_with_graph
+    _GRAPH_AVAILABLE = True
+except ImportError:
+    _GRAPH_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -48,6 +54,11 @@ def analyze_job(job: JobPosting, use_ai: bool = True) -> ValidationResult:
     start_ms = time.monotonic() * 1000
 
     signals = extract_signals(job)
+    if _GRAPH_AVAILABLE:
+        try:
+            signals = _extract_with_graph(job)
+        except Exception:
+            logger.debug("Graph signal extraction failed; using base signals", exc_info=True)
     result = build_result(job, signals)
 
     if use_ai and _AMBIGUOUS_LOW <= result.scam_score <= _AMBIGUOUS_HIGH:
