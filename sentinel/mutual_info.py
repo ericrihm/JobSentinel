@@ -18,11 +18,10 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from statistics import mean, stdev
-from typing import Iterable
-
 
 # ---------------------------------------------------------------------------
 # Entropy helpers
@@ -63,7 +62,7 @@ def _mutual_information(x_vals: list, y_vals: list) -> float:
         return 0.0
     y_counts: Counter = Counter(y_vals)
     h_y = _entropy(y_counts.values())
-    h_y_given_x = _conditional_entropy(list(zip(x_vals, y_vals)))
+    h_y_given_x = _conditional_entropy(list(zip(x_vals, y_vals, strict=False)))
     return max(0.0, h_y - h_y_given_x)
 
 
@@ -74,10 +73,10 @@ def _conditional_mutual_information(
     if not x_vals:
         return 0.0
     # H(X | Z)
-    h_x_given_z = _conditional_entropy(list(zip(z_vals, x_vals)))
+    h_x_given_z = _conditional_entropy(list(zip(z_vals, x_vals, strict=False)))
     # H(X | Y, Z) — treat (y, z) as a compound variable
-    yz = [(y, z) for y, z in zip(y_vals, z_vals)]
-    h_x_given_yz = _conditional_entropy(list(zip(yz, x_vals)))
+    yz = [(y, z) for y, z in zip(y_vals, z_vals, strict=False)]
+    h_x_given_yz = _conditional_entropy(list(zip(yz, x_vals, strict=False)))
     return max(0.0, h_x_given_z - h_x_given_yz)
 
 
@@ -276,7 +275,7 @@ class MutualInformationCalculator:
             # P(scam | signal fired)
             if fired_count > 0:
                 scam_when_fired = sum(
-                    lbl for xv, (lbl, _) in zip(x_vals, labelled) if xv == 1
+                    lbl for xv, (lbl, _) in zip(x_vals, labelled, strict=False) if xv == 1
                 )
                 precision_when_fired = scam_when_fired / fired_count
             else:
@@ -327,7 +326,7 @@ class MutualInformationCalculator:
                     vectors[r_high.signal_name],
                 )
                 # Normalise by H(label)
-                cmi_norm = cmi / h_label if h_label > 0 else 0.0
+                cmi / h_label if h_label > 0 else 0.0
                 # If the remaining unique info is tiny fraction of original MI
                 if r_low.mi_bits > 0 and cmi / r_low.mi_bits < (1 - self.redundancy_threshold):
                     r_low.is_redundant = True
@@ -501,7 +500,7 @@ class ConditionalMI:
         """Create a compound variable by zipping the presence vectors of selected signals."""
         if not signal_names:
             return [() for _ in range(n)]
-        return list(zip(*(vectors[s] for s in signal_names)))
+        return list(zip(*(vectors[s] for s in signal_names), strict=False))
 
     @staticmethod
     def _retained_mi(

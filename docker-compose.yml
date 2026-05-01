@@ -1,0 +1,59 @@
+version: "3.9"
+
+# Persistent storage for the SQLite database shared by both services
+volumes:
+  sentinel_data:
+
+x-sentinel-common: &sentinel-common
+  image: sentinel:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    - sentinel_data:/data
+  environment:
+    SENTINEL_DB_PATH: /data/sentinel.db
+    # Provide your Anthropic API key to enable AI-powered analysis
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *sentinel-common
+    container_name: sentinel-api
+    command: ["serve", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "${PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  scanner:
+    <<: *sentinel-common
+    container_name: sentinel-scanner
+    # Run the background scan loop (sentinel auto).
+    # Adjust --queries and --interval to taste via env vars.
+    command:
+      - auto
+      - --queries
+      - "${SCAN_QUERIES:-software engineer,data analyst,remote developer}"
+      - --location
+      - "${SCAN_LOCATION:-remote}"
+      - --loop-count
+      - "0"
+      - --interval
+      - "${SCAN_INTERVAL_SECONDS:-3600}"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.path.exists('/data/sentinel.db')"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

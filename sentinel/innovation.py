@@ -19,10 +19,10 @@ import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from sentinel.db import SentinelDB
+
 try:
     from sentinel.ecosystem import publish_flywheel_state, publish_observation
 except ImportError:

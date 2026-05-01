@@ -381,7 +381,7 @@ class CascadeDetector:
 
     def preview_impact(
         self,
-        db: "SentinelDB",
+        db: SentinelDB,
         old_weights: dict[str, float],
         new_weights: dict[str, float],
         sample_size: int = 100,
@@ -391,7 +391,6 @@ class CascadeDetector:
         Returns a CascadeReport characterising how many jobs would change
         risk classification and by how much.
         """
-        from sentinel.scorer import classify_risk  # deferred import
 
         jobs = db.get_recent_jobs_for_sampling(limit=sample_size)
         if not jobs:
@@ -481,7 +480,7 @@ class CascadeDetector:
 
     def track_cascade(
         self,
-        db: "SentinelDB",
+        db: SentinelDB,
         change_event: str,
         before_metrics: dict,
         after_metrics: dict,
@@ -531,7 +530,7 @@ class CascadeDetector:
 
     def detect_ripple_effects(
         self,
-        db: "SentinelDB",
+        db: SentinelDB,
         lookback_cycles: int = 5,
     ) -> list[RippleEffect]:
         """Detect correlated changes across flywheel metric histories.
@@ -646,7 +645,7 @@ def _pearson_correlation(x: list[float], y: list[float]) -> float:
     mean_x = sum(x) / n
     mean_y = sum(y) / n
 
-    num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y))
+    num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y, strict=False))
     denom_x = math.sqrt(sum((xi - mean_x) ** 2 for xi in x))
     denom_y = math.sqrt(sum((yi - mean_y) ** 2 for yi in y))
 

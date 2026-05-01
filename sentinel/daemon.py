@@ -7,7 +7,7 @@ Runs the full self-improving loop on a configurable schedule:
 import logging
 import signal
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
 logger = logging.getLogger(__name__)

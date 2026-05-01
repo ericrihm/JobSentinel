@@ -16,6 +16,7 @@ All stdlib. MinHash and Jaro-Winkler implemented from scratch.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import math
 import re
@@ -28,7 +29,7 @@ from typing import TYPE_CHECKING
 from sentinel.models import JobPosting
 
 if TYPE_CHECKING:
-    from sentinel.db import SentinelDB
+    pass
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -164,7 +165,7 @@ class MinHasher:
         """Estimate Jaccard similarity from two MinHash signatures."""
         if not sig1 or not sig2 or len(sig1) != len(sig2):
             return 0.0
-        matches = sum(a == b for a, b in zip(sig1, sig2))
+        matches = sum(a == b for a, b in zip(sig1, sig2, strict=False))
         return matches / len(sig1)
 
 
@@ -456,7 +457,7 @@ class ScamNetworkGraph:
             add_edge(new_id, pid, "description_hash")
 
         # 3. Near-duplicate description via MinHash
-        near_dups = self._text_index.find_near_duplicates(
+        self._text_index.find_near_duplicates(
             self._nodes[new_id].description_hash,  # placeholder; we recompute below
             threshold=self._threshold,
         )
@@ -580,10 +581,8 @@ class RecruiterProfile:
         """Extract UTC hours from stored timestamps."""
         hours: list[int] = []
         for ts in self.posting_times:
-            try:
+            with contextlib.suppress(ValueError):
                 hours.append(datetime.fromisoformat(ts).hour)
-            except ValueError:
-                pass
         return hours
 
     @property
@@ -696,18 +695,12 @@ class RecruiterProfiler:
         # Hour overlap
         hours_a = set(a.posting_hours)
         hours_b = set(b.posting_hours)
-        if hours_a and hours_b:
-            hour_sim = len(hours_a & hours_b) / len(hours_a | hours_b)
-        else:
-            hour_sim = 0.0
+        hour_sim = len(hours_a & hours_b) / len(hours_a | hours_b) if hours_a and hours_b else 0.0
 
         # Category overlap
         cats_a = set(a.job_categories) - {""}
         cats_b = set(b.job_categories) - {""}
-        if cats_a and cats_b:
-            cat_sim = len(cats_a & cats_b) / len(cats_a | cats_b)
-        else:
-            cat_sim = 0.0
+        cat_sim = len(cats_a & cats_b) / len(cats_a | cats_b) if cats_a and cats_b else 0.0
 
         # Language fingerprint cosine similarity
         fp_a = a.language_fingerprint

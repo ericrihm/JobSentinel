@@ -16,14 +16,12 @@ NexusEvolver    — one full autonomous improvement cycle via evolve()
 
 from __future__ import annotations
 
-import json
 import logging
-import math
 import statistics
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Optional
+from typing import Any
 
 from sentinel.models import JobPosting, ScamSignal, SignalCategory
 
@@ -41,7 +39,7 @@ except Exception:
     logger.debug("nexus: signals module unavailable")
 
 try:
-    from sentinel.scorer import score_signals, classify_risk, build_result
+    from sentinel.scorer import score_signals
     _HAS_SCORER = True
 except Exception:
     _HAS_SCORER = False
@@ -49,10 +47,9 @@ except Exception:
 
 try:
     from sentinel.fraud_handbook import (
-        FraudTriangleScorer,
         BenfordAnalyzer,
+        FraudTriangleScorer,
         LinguisticForensics,
-        extract_fraud_handbook_signals,
     )
     _HAS_FRAUD = True
 except Exception:
@@ -67,7 +64,7 @@ except Exception:
     logger.debug("nexus: llm_detect module unavailable")
 
 try:
-    from sentinel.stylometry import StyleExtractor, OperatorLinker
+    from sentinel.stylometry import OperatorLinker, StyleExtractor
     _HAS_STYLO = True
 except Exception:
     _HAS_STYLO = False
@@ -102,7 +99,7 @@ except Exception:
     logger.debug("nexus: adversarial module unavailable")
 
 try:
-    from sentinel.disagreement import DisagreementDetector, ConsensusBuilder
+    from sentinel.disagreement import DisagreementDetector
     _HAS_DISAGREE = True
 except Exception:
     _HAS_DISAGREE = False
@@ -116,28 +113,24 @@ except Exception:
     logger.debug("nexus: counterfactual module unavailable")
 
 try:
-    from sentinel.research import ResearchEngine
     _HAS_RESEARCH = True
 except Exception:
     _HAS_RESEARCH = False
     logger.debug("nexus: research module unavailable")
 
 try:
-    from sentinel.innovation import InnovationEngine
     _HAS_INNOVATION = True
 except Exception:
     _HAS_INNOVATION = False
     logger.debug("nexus: innovation module unavailable")
 
 try:
-    from sentinel.temporal import TemporalTracker
     _HAS_TEMPORAL = True
 except Exception:
     _HAS_TEMPORAL = False
     logger.debug("nexus: temporal module unavailable")
 
 try:
-    from sentinel.db import SentinelDB
     _HAS_DB = True
 except Exception:
     _HAS_DB = False
@@ -209,7 +202,7 @@ class NexusReport:
     similar_postings: list[str] = field(default_factory=list)
 
     # Stylometry
-    operator_fingerprint: Optional[str] = None
+    operator_fingerprint: str | None = None
 
     # Economic flags
     economic_flags: list[str] = field(default_factory=list)
@@ -503,10 +496,7 @@ class Nexus:
                 def _score_fn(t: str) -> float:
                     # Re-extract signals on perturbed text
                     perturbed = JobPosting(description=t, title=job.title, company=job.company)
-                    if _HAS_SIGNALS:
-                        sigs = extract_signals(perturbed)
-                    else:
-                        sigs = []
+                    sigs = extract_signals(perturbed) if _HAS_SIGNALS else []
                     return score_signals(sigs) if sigs else 0.0
 
                 rs = RobustnessScorer(scoring_fn=_score_fn, n_perturbations=10)
@@ -1069,9 +1059,8 @@ class NexusDashboard:
                 f"Subsystems unavailable: {', '.join(unavailable[:5])}. "
                 "Check imports and dependencies."
             )
-        if accuracy_trend and len(accuracy_trend) >= 2:
-            if accuracy_trend[-1] < accuracy_trend[-2] - 0.05:
-                recs.append("Accuracy declining — consider running NexusEvolver.evolve().")
+        if accuracy_trend and len(accuracy_trend) >= 2 and accuracy_trend[-1] < accuracy_trend[-2] - 0.05:
+            recs.append("Accuracy declining — consider running NexusEvolver.evolve().")
         if not self._recent_reports:
             recs.append("No analyses recorded yet — run Nexus.deep_analyze() to populate.")
 

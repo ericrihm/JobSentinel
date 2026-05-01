@@ -16,7 +16,7 @@ import sqlite3
 import statistics
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ def _now_iso() -> str:
 # Edge types
 # ---------------------------------------------------------------------------
 
-class EdgeType(str, Enum):
+class EdgeType(StrEnum):
     FEEDS = "FEEDS"           # source output directly consumed by target
     INHIBITS = "INHIBITS"     # source suppresses / damps target activation
     CORRELATES = "CORRELATES" # co-movement without direct causation
@@ -253,7 +253,7 @@ class NeuralMesh:
     8. SQLite persistence for all state.
     """
 
-    def __init__(self, db: "SentinelDB | None" = None) -> None:
+    def __init__(self, db: SentinelDB | None = None) -> None:
         self._db = db
         # node_name → CircuitBreakerState
         self._circuit_breakers: dict[str, CircuitBreakerState] = {}
@@ -413,9 +413,7 @@ class NeuralMesh:
         w = edge.weight
         if edge.edge_type == EdgeType.FEEDS:
             return incoming * _PROPAGATION_DECAY * w
-        elif edge.edge_type == EdgeType.INHIBITS:
-            return incoming * _PROPAGATION_DECAY * w * 0.5
-        elif edge.edge_type == EdgeType.CORRELATES:
+        elif edge.edge_type == EdgeType.INHIBITS or edge.edge_type == EdgeType.CORRELATES:
             return incoming * _PROPAGATION_DECAY * w * 0.5
         else:  # COMPETES — no propagation
             return 0.0
@@ -466,7 +464,7 @@ class NeuralMesh:
         For each edge (A→B), the outcome quality is the geometric mean of
         A's and B's precision scores.
         """
-        for (src, tgt), edge in self._edges.items():
+        for (src, tgt), _edge in self._edges.items():
             if src in flywheel_outcomes and tgt in flywheel_outcomes:
                 combined = math.sqrt(flywheel_outcomes[src] * flywheel_outcomes[tgt])
                 self.hebbian_reinforce(src, tgt, combined)
@@ -600,7 +598,7 @@ class NeuralMesh:
             cb.tripped = False
             cb.protective_mode = False
             # Clear protective mode on neighbours that were set by this node
-            for (src, tgt), edge in self._edges.items():
+            for (src, tgt), _edge in self._edges.items():
                 if src == flywheel:
                     neighbour_cb = self._circuit_breakers.get(tgt)
                     if neighbour_cb and neighbour_cb.protective_mode:
@@ -1205,7 +1203,7 @@ class NeuralMesh:
 # Default Sentinel mesh factory
 # ---------------------------------------------------------------------------
 
-def build_neural_mesh(db: "SentinelDB | None" = None) -> NeuralMesh:
+def build_neural_mesh(db: SentinelDB | None = None) -> NeuralMesh:
     """Return a NeuralMesh pre-wired with Sentinel's flywheel topology."""
     mesh = NeuralMesh(db=db)
 
@@ -1262,7 +1260,7 @@ def _pearson_correlation(x: list[float], y: list[float]) -> float:
     x, y = x[:n], y[:n]
     mean_x = sum(x) / n
     mean_y = sum(y) / n
-    num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y))
+    num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(x, y, strict=False))
     denom_x = math.sqrt(sum((xi - mean_x) ** 2 for xi in x))
     denom_y = math.sqrt(sum((yi - mean_y) ** 2 for yi in y))
     denom = denom_x * denom_y
@@ -1321,7 +1319,7 @@ def _hypothesise_cause(
     """Infer a probable shared cause from the resonating group's topology."""
     # Find nodes with highest in-degree within the group
     in_degree: dict[str, int] = {n: 0 for n in group}
-    for (src, tgt), edge in edges.items():
+    for (src, tgt), _edge in edges.items():
         if src in group and tgt in group:
             in_degree[tgt] += 1
 

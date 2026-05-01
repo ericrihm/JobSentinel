@@ -14,14 +14,12 @@ RobustnessReport     — Dataclass capturing the full analysis result.
 
 from __future__ import annotations
 
-import math
 import random
 import re
 import string
-from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from statistics import mean, stdev
-from typing import Callable
 
 # ---------------------------------------------------------------------------
 # Synonym table (inline, stdlib-only)
@@ -114,7 +112,7 @@ class PerturbationEngine:
 
     def generate_targeted(self, text: str, n: int, strategy: str) -> list[str]:
         """Generate *n* variants using a single named strategy."""
-        fn_map = {name: fn for name, fn in zip(self._strategy_names(), self._all_strategies())}
+        fn_map = {name: fn for name, fn in zip(self._strategy_names(), self._all_strategies(), strict=False)}
         fn = fn_map.get(strategy)
         if fn is None:
             raise ValueError(f"Unknown strategy: {strategy!r}. Available: {list(fn_map)}")
@@ -286,7 +284,7 @@ class PerturbationEngine:
         ]
 
     def _strategy_map(self, strategies: list[str] | None) -> list[Callable[[str], str]]:
-        name_to_fn = dict(zip(self._strategy_names(), self._all_strategies()))
+        name_to_fn = dict(zip(self._strategy_names(), self._all_strategies(), strict=False))
         if strategies is None:
             return self._all_strategies()
         result = []
@@ -429,7 +427,7 @@ class RobustnessScorer:
 
         # Collect adversarial examples (flips)
         adversarial: list[tuple[str, float]] = []
-        for variant, ps in zip(variants, perturbed_scores):
+        for variant, ps in zip(variants, perturbed_scores, strict=False):
             if abs(ps - original_score) >= self.flip_threshold:
                 adversarial.append((variant, ps))
 

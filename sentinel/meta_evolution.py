@@ -24,7 +24,6 @@ import statistics
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
 
 from sentinel.db import SentinelDB
 
@@ -205,7 +204,7 @@ class GaussianProcessOptimizer:
         return len(self._X)
 
     def _rbf_kernel(self, x1: list[float], x2: list[float]) -> float:
-        sq_dist = sum((a - b) ** 2 for a, b in zip(x1, x2))
+        sq_dist = sum((a - b) ** 2 for a, b in zip(x1, x2, strict=False))
         return math.exp(-0.5 * sq_dist / (self.length_scale ** 2))
 
     def _build_K(self) -> list[list[float]]:
@@ -379,12 +378,12 @@ class FitnessLandscape:
     def _normalize(self, vec: list[float]) -> list[float]:
         return [
             (v - lo) / (hi - lo) if hi > lo else 0.5
-            for v, (lo, hi) in zip(vec, self.BOUNDS)
+            for v, (lo, hi) in zip(vec, self.BOUNDS, strict=False)
         ]
 
     def _denormalize(self, nvec: list[float]) -> list[float]:
         return [
-            lo + n * (hi - lo) for n, (lo, hi) in zip(nvec, self.BOUNDS)
+            lo + n * (hi - lo) for n, (lo, hi) in zip(nvec, self.BOUNDS, strict=False)
         ]
 
 
@@ -419,7 +418,7 @@ class RegressionAnalyzer:
             return []
 
         changes: list[RegimeChange] = []
-        overall_mean = statistics.mean(series)
+        statistics.mean(series)
         overall_var = max(statistics.variance(series), 1e-10) if len(series) > 1 else 1.0
 
         for t in range(min_segment, len(series) - min_segment):
@@ -813,7 +812,7 @@ class EvolutionaryPopulation:
         count = 0
         for i in range(len(vecs)):
             for j in range(i + 1, len(vecs)):
-                dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(vecs[i], vecs[j])))
+                dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(vecs[i], vecs[j], strict=False)))
                 total += dist
                 count += 1
         return total / count if count > 0 else 0.0
@@ -906,10 +905,7 @@ class LearningVelocityTracker:
                 break
 
         # Oscillation amplitude
-        if len(recent) >= 3:
-            oscillation_amplitude = max(recent) - min(recent)
-        else:
-            oscillation_amplitude = 0.0
+        oscillation_amplitude = max(recent) - min(recent) if len(recent) >= 3 else 0.0
 
         return LearningVelocityReport(
             flywheel_name=flywheel_name,

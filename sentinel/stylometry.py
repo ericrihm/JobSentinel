@@ -17,8 +17,6 @@ import re
 import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Sequence
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -372,7 +370,7 @@ def _weighted_euclidean(v1: list[float], v2: list[float], weights: list[float]) 
         # Vectors have different lengths; use pairwise minimum length
         min_len = min(len(v1), len(v2), len(weights))
         v1, v2, weights = v1[:min_len], v2[:min_len], weights[:min_len]
-    total = sum(w * (a - b) ** 2 for w, a, b in zip(weights, v1, v2))
+    total = sum(w * (a - b) ** 2 for w, a, b in zip(weights, v1, v2, strict=False))
     return math.sqrt(total)
 
 
@@ -724,8 +722,8 @@ class TemplateDetector:
         if not a or not b:
             return 0.0
         # Use bigrams for more structural comparison
-        bigrams_a = set(zip(a, a[1:])) if len(a) > 1 else set(zip(a, a))
-        bigrams_b = set(zip(b, b[1:])) if len(b) > 1 else set(zip(b, b))
+        bigrams_a = set(zip(a, a[1:], strict=False)) if len(a) > 1 else set(zip(a, a, strict=False))
+        bigrams_b = set(zip(b, b[1:], strict=False)) if len(b) > 1 else set(zip(b, b, strict=False))
         intersection = len(bigrams_a & bigrams_b)
         union = len(bigrams_a | bigrams_b)
         return intersection / union if union else 0.0

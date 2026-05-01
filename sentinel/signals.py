@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import re
@@ -350,16 +351,15 @@ def check_salary_anomaly(job: JobPosting) -> ScamSignal | None:
                     )
 
     # --- Legacy entry-level ceiling check (no category match) ---
-    if level_raw in entry_levels:
-        if ceiling > 500_000:
-            return ScamSignal(
-                name="salary_anomaly",
-                category=SignalCategory.WARNING,
-                weight=0.70,
-                confidence=0.72,
-                detail=f"Unrealistically high salary for {level_raw} role: ${ceiling:,.0f}",
-                evidence=str(ceiling),
-            )
+    if level_raw in entry_levels and ceiling > 500_000:
+        return ScamSignal(
+            name="salary_anomaly",
+            category=SignalCategory.WARNING,
+            weight=0.70,
+            confidence=0.72,
+            detail=f"Unrealistically high salary for {level_raw} role: ${ceiling:,.0f}",
+            evidence=str(ceiling),
+        )
 
     return None
 
@@ -1031,8 +1031,8 @@ def _get_compiled_patterns(db_path: str = "") -> list[tuple[ScamPattern, re.Patt
 
     compiled: list[tuple[ScamPattern, re.Pattern | None]] = []
     try:
-        from sentinel.knowledge import KnowledgeBase
         from sentinel.db import SentinelDB
+        from sentinel.knowledge import KnowledgeBase
 
         db = SentinelDB(path=db_path) if db_path else SentinelDB()
         kb = KnowledgeBase(db=db)
@@ -1041,10 +1041,8 @@ def _get_compiled_patterns(db_path: str = "") -> list[tuple[ScamPattern, re.Patt
         for pat in patterns:
             rx = None
             if pat.regex and pat.regex.strip():
-                try:
+                with contextlib.suppress(re.error):
                     rx = re.compile(pat.regex)
-                except re.error:
-                    pass
             compiled.append((pat, rx))
         db.close()
     except Exception:

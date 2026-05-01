@@ -473,7 +473,7 @@ class DetectionFlywheel:
             - ``ece_before``: ECE before adjustments.
             - ``skipped``: True when no calibration data is available.
         """
-        from sentinel.scorer import _RISK_THRESHOLDS, _MAX_THRESHOLD_DELTA
+        from sentinel.scorer import _MAX_THRESHOLD_DELTA, _RISK_THRESHOLDS
 
         curve = self.calibration_curve(db=db, n_bins=n_bins)
         if not curve:
@@ -890,17 +890,17 @@ class DetectionFlywheel:
             eps = 1e-10
             return sum(
                 ai * math.log2((ai + eps) / (bi + eps))
-                for ai, bi in zip(a, b)
+                for ai, bi in zip(a, b, strict=False)
                 if ai > 0
             )
 
-        m = [(pi + qi) / 2.0 for pi, qi in zip(p, q)]
+        m = [(pi + qi) / 2.0 for pi, qi in zip(p, q, strict=False)]
         jsd = 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
         drift_score = max(0.0, min(1.0, jsd))
 
         # Chi-squared statistic (observed vs. expected based on baseline)
         chi2 = 0.0
-        for pi, qi in zip(p, q):
+        for pi, qi in zip(p, q, strict=False):
             expected = pi * recent_jobs
             observed = qi * recent_jobs
             if expected > 0:

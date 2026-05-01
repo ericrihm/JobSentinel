@@ -12,7 +12,6 @@ from __future__ import annotations
 import csv
 import json
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
