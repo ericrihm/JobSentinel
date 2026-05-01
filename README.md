@@ -4,7 +4,7 @@
 # JobSentinel
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-2411%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-2789%20passing-brightgreen.svg)](#development)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-purple.svg)](https://github.com/astral-sh/ruff)
 
@@ -101,7 +101,7 @@ pip install -e ".[web]"     # Web scraping (httpx + beautifulsoup4)
 
 Cross-reference companies against multiple sources:
 
-- **Known employers database** — 200+ verified major employers
+- **Known employers database** — 300+ verified major employers
 - **Domain WHOIS** — Check domain age (new domains = higher risk)
 - **LinkedIn company page** — Verify follower count, employee count
 - **Result caching** — 7-day TTL, `--refresh` to force re-check

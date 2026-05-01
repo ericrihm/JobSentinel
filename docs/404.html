@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Page not found — JobSentinel" />
+  <title>404 — Page Not Found | JobSentinel</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>&#x1F6E1;</text></svg>" />
+  <style>
+    .not-found {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .not-found-code {
+      font-size: clamp(5rem, 18vw, 9rem);
+      font-weight: 800;
+      letter-spacing: -.04em;
+      color: var(--accent);
+      line-height: 1;
+      margin-bottom: 16px;
+    }
+    .not-found h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 10px; }
+    .not-found p  { color: var(--muted); font-size: .95rem; max-width: 420px; margin-bottom: 28px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo" aria-label="JobSentinel home">
+      <span class="nav-logo-icon">&#x1F6E1;</span>
+      <span>JobSentinel</span>
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="analyze.html">Analyze</a></li>
+      <li><a href="demo.html">Demo</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" aria-label="Toggle menu">&#x2630;</button>
+  </div>
+</nav>
+
+<div class="not-found">
+  <div class="not-found-code" aria-hidden="true">404</div>
+  <h1>Page Not Found</h1>
+  <p>The page you are looking for does not exist or has been moved.</p>
+  <a href="index.html" class="btn btn-primary">&#x2190; Back to Home</a>
+</div>
+
+<footer>
+  <div class="container">
+    <div class="footer-bottom">
+      <p>&copy; 2026 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+const toggle = document.querySelector('.nav-mobile-toggle');
+const navLinks = document.querySelector('.nav-links');
+toggle?.addEventListener('click', () => navLinks?.classList.toggle('open'));
+</script>
+</body>
+</html>
