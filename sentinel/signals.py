@@ -46,10 +46,33 @@ _PERSONAL_INFO = re.compile(
     re.IGNORECASE,
 )
 
+# Fuzzy "guaranteed" sub-patterns tolerate char_duplicate (guarranteed,
+# guarantteed, guaranteedd, GGuaranteed) and char_drop (guaranted, guarnteed,
+# guranteed, Guanteed, Guaraneed).
+# Two alternations:
+#   1. Normal path: requires 't' (g{1,2} handles doubled leading G)
+#   2. t-dropped path: g+uar+n+ee+d (requires r and n to compensate)
+_GUAR = (
+    r"g{1,2}(?:ua?|a)r{0,2}a?n{0,2}t{1,2}e{1,3}d{0,2}"
+    r"|g{1,2}ua?r{1,2}a?ne{1,3}d{0,2}"
+)
+
+# Fuzzy "income" sub-pattern covers all 1-letter drop variants:
+# ncome (i dropped), icome (n dropped), incme (o dropped),
+# incoe (m dropped), incom (e dropped), plus char_dup doubles.
+_INCOME = (
+    r"inc{1,2}o{1,2}m{1,2}e{0,2}"
+    r"|inc{1,2}m{1,2}e{1,2}"
+    r"|inc{1,2}o{1,2}e{1,2}"
+    r"|in{1,2}o{1,2}m{1,2}e{0,2}"
+    r"|n{1,2}c{1,2}o{1,2}m{1,2}e{0,2}"
+    r"|ic{1,2}o{1,2}m{1,2}e{0,2}"
+)
+
 _GUARANTEED_INCOME = re.compile(
-    r"\b(guaranteed (salary|income|pay|earnings?|profit)|"
-    r"earn \$[\d,]+\s*(a |per )?(day|daily|week|hour|hr) guaranteed|"
-    r"(guaranteed|promise[sd]) to (earn|make|pay))\b",
+    r"\b((?:" + _GUAR + r")\s+(?:salar{1,2}y|" + _INCOME + r"|pay|earnings?|profit)|"
+    r"earn\s+\$[\d,]+\s*(?:a\s+|per\s+)?(?:day|daily|week|hour|hr)\s+(?:" + _GUAR + r")|"
+    r"(?:(?:" + _GUAR + r")|promise[sd])\s+to\s+(?:earn|make|pay))\b",
     re.IGNORECASE,
 )
 
@@ -67,10 +90,18 @@ _URGENCY = re.compile(
     re.IGNORECASE,
 )
 
+# Fuzzy patterns tolerate char_duplicate (Noo, expperience, experiencce, nneedded)
+# and char_drop (no experienc, no exprience, no experience neded).
+# exp{1,2}: handles doubled 'p' in experience
+# c{0,2}: handles doubled 'cc' in experience
+# n{1,2} for needed: handles doubled 'nn' at start of 'needed'
 _NO_EXPERIENCE = re.compile(
-    r"\b(no experience (required|needed|necessary)|"
-    r"no (skills?|qualifications?|background) (required|needed)|"
-    r"anyone can|so easy|simple (job|work|tasks?))\b",
+    r"\b("
+    r"n{1,2}o{1,2}\s+exp{1,2}e?r{1,2}i{0,2}en{1,2}c{0,2}e{0,2}\s+"
+    r"(requ?i{0,2}r{0,2}e{0,2}d{0,2}|n{1,2}e{1,3}d{1,2}e{0,2}d{0,2}|neces{1,2}a?r{1,2}y)|"
+    r"no\s+(skills?|qualifications?|background)\s+(required|needed)|"
+    r"anyone can|so easy|simple\s+(job|work|tasks?)"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -419,7 +450,11 @@ def check_urgency_language(job: JobPosting) -> ScamSignal | None:
 def check_wfh_unrealistic_pay(job: JobPosting) -> ScamSignal | None:
     text = _full_text(job)
     is_wfh = job.is_remote or bool(
-        re.search(r"\b(work from home|remote|wfh|work at home)\b", text, re.IGNORECASE)
+        re.search(
+            r"\b(w{1,2}o{0,2}r{1,2}k{1,2}\s+f{1,2}r{0,2}o?m{0,2}\s+h{1,2}o{0,2}m?e{0,2}|"
+            r"remote|wfh|w{1,2}o{0,2}r{1,2}k{1,2}\s+at\s+h{1,2}o{0,2}m?e{0,2})\b",
+            text, re.IGNORECASE
+        )
     )
     if not is_wfh:
         return None

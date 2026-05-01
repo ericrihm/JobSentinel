@@ -502,3 +502,285 @@ class TestHealthEndpoint:
         response = client.get("/api/health")
         precision = response.json()["precision"]
         assert 0.0 <= precision <= 1.0
+
+
+# ===========================================================================
+# POST /api/v1/analyze-url
+# ===========================================================================
+
+
+class TestAnalyzeUrlEndpoint:
+    def test_analyze_url_returns_200(self, client):
+        """POST /api/v1/analyze-url with a valid https URL should return 200."""
+        response = client.post(
+            "/api/v1/analyze-url",
+            json={"url": "https://www.google.com"},
+        )
+        assert response.status_code == 200
+
+    def test_analyze_url_response_has_required_fields(self, client):
+        """Response should contain url, domain_analysis, and reputation fields."""
+        response = client.post(
+            "/api/v1/analyze-url",
+            json={"url": "https://bit.ly/fake-job"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "url" in data
+        assert "domain_analysis" in data
+        assert "reputation" in data
+
+    def test_analyze_url_domain_analysis_has_risk_score(self, client):
+        """domain_analysis sub-dict should contain a risk_score field."""
+        response = client.post(
+            "/api/v1/analyze-url",
+            json={"url": "https://bit.ly/scamjob1"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "risk_score" in data["domain_analysis"]
+
+    def test_analyze_url_domain_analysis_has_flags(self, client):
+        """domain_analysis should contain a flags list."""
+        response = client.post(
+            "/api/v1/analyze-url",
+            json={"url": "https://jobs-apply.xyz/hiring-now"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data["domain_analysis"]["flags"], list)
+
+    def test_analyze_url_shortener_flagged(self, client):
+        """A URL shortener domain should be flagged as is_shortener=True."""
+        response = client.post(
+            "/api/v1/analyze-url",
+            json={"url": "https://bit.ly/apply-now"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["domain_analysis"]["is_shortener"] is True
+
+    def test_analyze_url_missing_url_returns_422(self, client):
+        """Missing url field should return 422."""
+        response = client.post("/api/v1/analyze-url", json={})
+        assert response.status_code == 422
+
+    def test_analyze_url_no_http_scheme_returns_422(self, client):
+        """URL without http/https scheme should return 422."""
+        response = client.post(
+            "/api/v1/analyze-url",
+            json={"url": "ftp://badurl.com"},
+        )
+        assert response.status_code == 422
+
+    def test_analyze_url_reputation_has_is_malicious(self, client):
+        """reputation sub-dict should contain is_malicious boolean."""
+        response = client.post(
+            "/api/v1/analyze-url",
+            json={"url": "https://example.com"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "is_malicious" in data["reputation"]
+        assert isinstance(data["reputation"]["is_malicious"], bool)
+
+
+# ===========================================================================
+# POST /api/v1/verify-company
+# ===========================================================================
+
+
+class TestVerifyCompanyEndpoint:
+    def test_verify_company_returns_200(self, client):
+        """POST /api/v1/verify-company with a valid company name should return 200."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={"company_name": "Google"},
+        )
+        assert response.status_code == 200
+
+    def test_verify_company_response_has_required_fields(self, client):
+        """Response should contain domain, existence, and company_name fields."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={"company_name": "Microsoft"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "domain" in data
+        assert "existence" in data
+        assert "company_name" in data
+
+    def test_verify_known_company_is_known_true(self, client):
+        """A well-known Fortune 500 company should have existence.is_known=True."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={"company_name": "google"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["existence"]["is_known"] is True
+
+    def test_verify_fake_company_not_known(self, client):
+        """A made-up company name should not be flagged as known."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={"company_name": "xyzFakeCompanyNotReal99"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["existence"]["is_known"] is False
+
+    def test_verify_company_existence_has_confidence(self, client):
+        """existence sub-dict should contain a confidence score."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={"company_name": "Amazon"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "confidence" in data["existence"]
+        assert 0.0 <= data["existence"]["confidence"] <= 1.0
+
+    def test_verify_company_missing_name_returns_422(self, client):
+        """Missing company_name field should return 422."""
+        response = client.post("/api/v1/verify-company", json={})
+        assert response.status_code == 422
+
+    def test_verify_company_with_url(self, client):
+        """Passing company_url should add domain verification to response."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={
+                "company_name": "Stripe",
+                "company_url": "https://stripe.com",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["company_url"] == "https://stripe.com"
+        assert "domain" in data
+
+    def test_verify_company_linkedin_none_when_not_provided(self, client):
+        """linkedin field should be None when linkedin_url not provided."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={"company_name": "Apple"},
+        )
+        assert response.status_code == 200
+        assert response.json()["linkedin"] is None
+
+    def test_verify_company_existence_has_flags_list(self, client):
+        """existence.flags should always be a list."""
+        response = client.post(
+            "/api/v1/verify-company",
+            json={"company_name": "Global Solutions LLC"},
+        )
+        assert response.status_code == 200
+        assert isinstance(response.json()["existence"]["flags"], list)
+
+
+# ===========================================================================
+# POST /api/v1/analyze-links
+# ===========================================================================
+
+
+class TestAnalyzeLinksEndpoint:
+    def test_analyze_links_returns_200(self, client):
+        """POST /api/v1/analyze-links with valid text should return 200."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={"text": "Apply at https://example.com or email hr@company.com"},
+        )
+        assert response.status_code == 200
+
+    def test_analyze_links_response_has_required_fields(self, client):
+        """Response should contain urls_found (int) and results (list) fields."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={"text": "Visit https://bit.ly/job123 to apply"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "urls_found" in data
+        assert "results" in data
+        assert isinstance(data["urls_found"], int)
+        assert isinstance(data["results"], list)
+
+    def test_analyze_links_detects_shortener_url(self, client):
+        """A bit.ly link in text should be detected and flagged as shortener."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={"text": "Click here to apply: https://bit.ly/apply-now123"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urls_found"] >= 1
+        shorteners = [
+            r for r in data["results"]
+            if r["domain_analysis"].get("is_shortener")
+        ]
+        assert len(shorteners) >= 1
+
+    def test_analyze_links_no_urls_returns_zero(self, client):
+        """Text with no URLs should return urls_found=0 and empty results."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={"text": "Please call us at our office to apply for this position."},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urls_found"] == 0
+        assert data["results"] == []
+
+    def test_analyze_links_multiple_urls(self, client):
+        """Text with multiple URLs should return one result per URL."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={
+                "text": (
+                    "Apply at https://example.com/jobs or visit "
+                    "https://bit.ly/scamjob for more info."
+                )
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["urls_found"] >= 1
+
+    def test_analyze_links_each_result_has_domain_analysis(self, client):
+        """Each result entry should contain domain_analysis and reputation."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={"text": "Apply here: https://jobs-apply.xyz/now"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        for result in data["results"]:
+            assert "domain_analysis" in result
+            assert "reputation" in result
+            assert "url" in result
+
+    def test_analyze_links_missing_text_returns_422(self, client):
+        """Missing text field should return 422."""
+        response = client.post("/api/v1/analyze-links", json={})
+        assert response.status_code == 422
+
+    def test_analyze_links_script_tag_rejected(self, client):
+        """Text containing <script> should be rejected with 422."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={"text": "Apply here <script>alert(1)</script> https://example.com"},
+        )
+        assert response.status_code == 422
+
+    def test_analyze_links_risk_score_in_range(self, client):
+        """domain_analysis.risk_score for each URL should be between 0.0 and 1.0."""
+        response = client.post(
+            "/api/v1/analyze-links",
+            json={"text": "Join us: https://bit.ly/job-scam and https://amazon-jobs.xyz"},
+        )
+        assert response.status_code == 200
+        for result in response.json()["results"]:
+            score = result["domain_analysis"]["risk_score"]
+            assert 0.0 <= score <= 1.0

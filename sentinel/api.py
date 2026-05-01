@@ -144,6 +144,34 @@ try:
         cold_start: bool = False
         checked_at: str
 
+    class AnalyzeUrlRequest(BaseModel):
+        """Payload for POST /api/v1/analyze-url."""
+        url: str = Field(..., max_length=2048, description="URL to analyze for scam indicators.")
+
+        @field_validator("url")
+        @classmethod
+        def url_must_have_http_scheme(cls, v: str) -> str:
+            if not (v.startswith("http://") or v.startswith("https://")):
+                raise ValueError("url must start with http:// or https://")
+            return v
+
+    class VerifyCompanyRequest(BaseModel):
+        """Payload for POST /api/v1/verify-company."""
+        company_name: str = Field(..., max_length=500, description="Company name to verify.")
+        company_url: str = Field("", max_length=2048, description="Company website URL (optional).")
+        linkedin_url: str = Field("", max_length=2048, description="Company LinkedIn URL (optional).")
+
+    class AnalyzeLinksRequest(BaseModel):
+        """Payload for POST /api/v1/analyze-links."""
+        text: str = Field(..., max_length=50000, description="Text containing URLs to extract and analyze.")
+
+        @field_validator("text")
+        @classmethod
+        def no_script_tags(cls, v: str) -> str:
+            if re.search(r"<script", v, re.IGNORECASE):
+                raise ValueError("Input may not contain script tags")
+            return v
+
 except ImportError:
     # FastAPI/Pydantic not installed — models won't be available at import time.
     # create_app() will raise a clear ImportError when called.
@@ -715,6 +743,124 @@ def create_app():  # noqa: C901
             "nexus": nexus_data,
             "health": health_data,
             "stats": stats_data,
+        }
+
+    # -----------------------------------------------------------------------
+    # POST /api/v1/analyze-url
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/v1/analyze-url", summary="Analyze a single URL for scam indicators")
+    def analyze_url_endpoint(req: AnalyzeUrlRequest) -> Any:
+        """Analyze a URL using LinkAnalyzer and return domain/reputation/redirect results.
+
+        Calls ``LinkAnalyzer().analyze_all(url)`` on the provided URL.
+        Returns the consolidated analysis dict including domain_analysis,
+        reputation, redirect_chain, and domain_age.
+        """
+        from sentinel.link_analyzer import LinkAnalyzer
+
+        try:
+            analyzer = LinkAnalyzer()
+            results = analyzer.analyze_all(req.url)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"URL analysis failed: {exc}"
+            ) from exc
+
+        # analyze_all returns a list (one entry per extracted URL).  Since we
+        # passed a single well-formed URL, return the first result directly; if
+        # nothing was extracted return an empty analysis.
+        if results:
+            return results[0]
+
+        # Fallback: run domain analysis directly for URLs that weren't caught
+        # by the text extractor (e.g., bare https:// without a trailing path).
+        try:
+            domain_analysis = analyzer.analyze_domain(req.url)
+            reputation = analyzer.check_url_reputation(req.url)
+            return {
+                "url": req.url,
+                "domain_analysis": domain_analysis,
+                "reputation": reputation,
+                "redirect_chain": None,
+                "domain_age": None,
+            }
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"URL domain analysis failed: {exc}"
+            ) from exc
+
+    # -----------------------------------------------------------------------
+    # POST /api/v1/verify-company
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/v1/verify-company", summary="Verify company legitimacy")
+    def verify_company_endpoint(req: VerifyCompanyRequest) -> Any:
+        """Verify whether a company appears legitimate.
+
+        Calls CompanyVerifier to check domain resolution, HTTPS, name heuristics,
+        and LinkedIn presence.  Returns a dict with verification sub-results.
+        """
+        from sentinel.company_verifier import CompanyVerifier
+
+        try:
+            verifier = CompanyVerifier()
+            result: dict[str, Any] = {}
+
+            # Domain verification (if URL provided)
+            domain_info = verifier.verify_domain(req.company_name, req.company_url)
+            result["domain"] = domain_info
+
+            # Existence check (heuristic, always runs)
+            exists_info = verifier.check_company_exists(req.company_name)
+            result["existence"] = exists_info
+
+            # LinkedIn presence (if URL provided)
+            if req.linkedin_url:
+                linkedin_info = verifier.verify_linkedin_presence(req.linkedin_url)
+                result["linkedin"] = linkedin_info
+            else:
+                result["linkedin"] = None
+
+            # Address legitimacy (if company_url acts as location hint)
+            result["company_name"] = req.company_name
+            result["company_url"] = req.company_url
+            result["linkedin_url"] = req.linkedin_url
+
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Company verification failed: {exc}"
+            ) from exc
+
+        return result
+
+    # -----------------------------------------------------------------------
+    # POST /api/v1/analyze-links
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/v1/analyze-links", summary="Extract and analyze all URLs in text")
+    def analyze_links_endpoint(req: AnalyzeLinksRequest) -> Any:
+        """Extract every URL from the provided text and analyze each one.
+
+        Calls ``LinkAnalyzer().analyze_all(text)`` which runs domain analysis,
+        reputation checks, redirect-chain following (for shorteners/suspicious
+        domains), and domain-age lookups for each discovered URL.
+
+        Returns: ``{"urls_found": N, "results": [...]}``.
+        """
+        from sentinel.link_analyzer import LinkAnalyzer
+
+        try:
+            analyzer = LinkAnalyzer()
+            results = analyzer.analyze_all(req.text)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Link analysis failed: {exc}"
+            ) from exc
+
+        return {
+            "urls_found": len(results),
+            "results": results,
         }
 
     return app
