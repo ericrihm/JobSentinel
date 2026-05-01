@@ -2,8 +2,8 @@ name: Scheduled Job Scan
 
 on:
   schedule:
-    # Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC
-    - cron: "0 0,6,12,18 * * *"
+    # Every 4 hours for fresher data
+    - cron: "0 */4 * * *"
   workflow_dispatch:
     inputs:
       query:
@@ -11,22 +11,28 @@ on:
         required: false
         default: "software engineer"
       location:
-        description: "Location filter (default: remote)"
+        description: "Location filter (default: empty for all)"
         required: false
-        default: "remote"
+        default: ""
+      ats_only:
+        description: "Only run ATS scrapers (skip aggregator APIs)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 env:
   SCAN_QUERY: ${{ github.event.inputs.query || 'software engineer' }}
-  SCAN_LOCATION: ${{ github.event.inputs.location || 'remote' }}
+  SCAN_LOCATION: ${{ github.event.inputs.location || '' }}
+  ATS_ONLY: ${{ github.event.inputs.ats_only || 'false' }}
 
 jobs:
   scan:
     name: Fetch & Score Job Postings
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -55,114 +61,175 @@ jobs:
 
       - name: Run ingestion pipeline
         env:
-          # Set optional API keys from repository secrets when configured
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
           USAJOBS_EMAIL: ${{ secrets.USAJOBS_EMAIL }}
         run: |
           python - <<'PYEOF'
-          import json, os, sys, traceback
+          import json, os, sys, traceback, hashlib
           from datetime import UTC, datetime
           from pathlib import Path
 
-          # Minimal sentinel import guard
           sys.path.insert(0, ".")
 
           run_ts = datetime.now(UTC).isoformat()
           query = os.environ.get("SCAN_QUERY", "software engineer")
-          location = os.environ.get("SCAN_LOCATION", "remote")
+          location = os.environ.get("SCAN_LOCATION", "")
+          ats_only = os.environ.get("ATS_ONLY", "false") == "true"
 
           results = {
               "run_timestamp": run_ts,
               "query": query,
               "location": location,
               "sources": [],
+              "all_jobs": [],
               "summary": {},
               "errors": [],
           }
 
-          source_names = ["RemoteOK", "Adzuna", "TheMuse", "USAJobs", "Remotive"]
-
           try:
               from sentinel.sources import (
-                  RemoteOKAdapter,
-                  AdzunaAdapter,
-                  TheMuseAdapter,
-                  USAJobsAdapter,
-                  RemotiveAdapter,
+                  RemoteOKSource,
+                  AdzunaSource,
+                  TheMuseSource,
+                  USAJobsSource,
+                  RemotiveSource,
+                  GreenhouseSource,
+                  LeverSource,
+                  AshbySource,
+                  SmartRecruitersSource,
               )
-              from sentinel.scorer import ScamScorer
-              from sentinel.knowledge import KnowledgeBase
+              from sentinel.registry import get_companies
               from sentinel.signals import extract_signals
 
-              adapters = [
-                  RemoteOKAdapter(),
-                  AdzunaAdapter(),
-                  TheMuseAdapter(),
-                  USAJobsAdapter(),
-                  RemotiveAdapter(),
-              ]
+              adapters = []
 
-              scorer = ScamScorer()
-              kb = KnowledgeBase()
+              # ATS sources (direct from company career pages)
+              gh_companies = get_companies("greenhouse")
+              if gh_companies:
+                  adapters.append(GreenhouseSource(companies=gh_companies))
+
+              lever_companies = get_companies("lever")
+              if lever_companies:
+                  adapters.append(LeverSource(companies=lever_companies))
+
+              ashby_companies = get_companies("ashby")
+              if ashby_companies:
+                  adapters.append(AshbySource(companies=ashby_companies))
+
+              sr_companies = get_companies("smartrecruiters")
+              if sr_companies:
+                  adapters.append(SmartRecruitersSource(companies=sr_companies))
+
+              # Aggregator APIs (broader coverage)
+              if not ats_only:
+                  adapters.append(RemoteOKSource())
+                  adapters.append(TheMuseSource())
+                  adapters.append(RemotiveSource())
+
+                  adzuna = AdzunaSource()
+                  if adzuna.available:
+                      adapters.append(adzuna)
+
+                  usajobs = USAJobsSource()
+                  if usajobs.available:
+                      adapters.append(usajobs)
 
               total_fetched = 0
-              total_high_risk = 0
+              total_safe = 0
+              total_suspicious = 0
+              total_scam = 0
+              seen_urls = set()
 
               for adapter in adapters:
-                  name = type(adapter).__name__.replace("Adapter", "")
+                  name = adapter.name
                   try:
-                      jobs = adapter.fetch(query=query, location=location, limit=25)
+                      jobs = adapter.fetch(query=query, location=location, limit=50)
                       scored = []
-                      high_risk = 0
                       for job in jobs:
+                          if job.url and job.url in seen_urls:
+                              continue
+                          if job.url:
+                              seen_urls.add(job.url)
+
                           try:
                               signals = extract_signals(job)
-                              result = scorer.score(job, signals)
+                              signal_count = len([s for s in signals if s.get("triggered")])
+                              scam_score = sum(s.get("weight", 0) for s in signals if s.get("triggered")) / max(len(signals), 1)
+                              scam_score = max(0.0, min(1.0, scam_score))
+
+                              if scam_score < 0.20:
+                                  risk_level = "safe"
+                                  total_safe += 1
+                              elif scam_score < 0.60:
+                                  risk_level = "suspicious"
+                                  total_suspicious += 1
+                              else:
+                                  risk_level = "scam"
+                                  total_scam += 1
+
+                              content_hash = hashlib.sha256(
+                                  f"{job.title}|{job.company}|{job.description[:500]}".encode()
+                              ).hexdigest()[:16]
+
                               entry = {
-                                  "id": job.job_id,
+                                  "url": job.url,
                                   "title": job.title,
                                   "company": job.company,
-                                  "source": job.source,
-                                  "scam_score": round(result.scam_score, 4),
-                                  "label": result.label,
-                                  "signal_count": len(signals),
+                                  "location": job.location,
+                                  "description": job.description[:5000],
+                                  "salary_min": job.salary_min,
+                                  "salary_max": job.salary_max,
+                                  "salary_currency": getattr(job, "salary_currency", "USD"),
+                                  "employment_type": getattr(job, "employment_type", ""),
+                                  "experience_level": getattr(job, "experience_level", ""),
+                                  "is_remote": getattr(job, "is_remote", False),
+                                  "source": name,
+                                  "source_company": getattr(job, "company", ""),
+                                  "scam_score": round(scam_score, 4),
+                                  "risk_level": risk_level,
+                                  "signal_count": signal_count,
+                                  "posted_at": getattr(job, "posted_date", ""),
+                                  "content_hash": content_hash,
                               }
                               scored.append(entry)
-                              if result.scam_score >= 0.6:
-                                  high_risk += 1
+                              results["all_jobs"].append(entry)
                           except Exception as exc:
                               results["errors"].append(f"{name}: score error: {exc}")
 
-                      total_fetched += len(jobs)
-                      total_high_risk += high_risk
+                      total_fetched += len(scored)
                       results["sources"].append({
                           "name": name,
-                          "jobs_fetched": len(jobs),
-                          "high_risk": high_risk,
-                          "jobs": scored,
+                          "jobs_fetched": len(scored),
+                          "safe": len([j for j in scored if j["risk_level"] == "safe"]),
+                          "suspicious": len([j for j in scored if j["risk_level"] == "suspicious"]),
+                          "scam": len([j for j in scored if j["risk_level"] == "scam"]),
                       })
-                  except Exception as exc:
+                      print(f"  {name}: {len(scored)} jobs fetched")
+                  except Exception:
                       results["errors"].append(f"{name}: fetch error: {traceback.format_exc()}")
-                      results["sources"].append({"name": name, "jobs_fetched": 0, "high_risk": 0, "jobs": []})
+                      results["sources"].append({"name": name, "jobs_fetched": 0, "safe": 0, "suspicious": 0, "scam": 0})
 
               results["summary"] = {
                   "total_fetched": total_fetched,
-                  "total_high_risk": total_high_risk,
+                  "total_safe": total_safe,
+                  "total_suspicious": total_suspicious,
+                  "total_scam": total_scam,
                   "sources_queried": len(adapters),
+                  "unique_urls": len(seen_urls),
                   "error_count": len(results["errors"]),
               }
 
           except ImportError as exc:
               results["errors"].append(f"Import error: {exc}")
-              results["summary"] = {"total_fetched": 0, "total_high_risk": 0, "sources_queried": 0, "error_count": 1}
+              results["summary"] = {"total_fetched": 0, "error_count": 1}
 
           out_path = Path("scan-results") / f"scan_{run_ts[:10]}.json"
           out_path.write_text(json.dumps(results, indent=2, default=str))
-          print(f"Wrote results to {out_path}")
+          print(f"\nWrote results to {out_path}")
+          print(f"Summary: {json.dumps(results['summary'], indent=2)}")
 
-          # Also emit a flat summary for the step summary
           summary_path = Path("scan-results") / "latest_summary.json"
           summary_path.write_text(json.dumps(results["summary"], indent=2))
           PYEOF
@@ -183,10 +250,10 @@ jobs:
           step_summary = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
 
           query    = os.environ.get("SCAN_QUERY", "software engineer")
-          location = os.environ.get("SCAN_LOCATION", "remote")
+          location = os.environ.get("SCAN_LOCATION", "") or "all"
 
           lines = [
-              "## Scan Results",
+              "## Job Scan Results",
               "",
               f"**Query:** `{query}` | **Location:** `{location}`",
               "",
@@ -194,7 +261,10 @@ jobs:
               "|--------|-------|",
               f"| Sources queried | {s.get('sources_queried', 0)} |",
               f"| Jobs fetched    | {s.get('total_fetched', 0)} |",
-              f"| High-risk (≥0.6) | {s.get('total_high_risk', 0)} |",
+              f"| Unique URLs     | {s.get('unique_urls', 0)} |",
+              f"| Safe (< 0.20)   | {s.get('total_safe', 0)} |",
+              f"| Suspicious      | {s.get('total_suspicious', 0)} |",
+              f"| Scam (>= 0.60)  | {s.get('total_scam', 0)} |",
               f"| Errors          | {s.get('error_count', 0)} |",
           ]
 
@@ -202,9 +272,9 @@ jobs:
           if detail_path:
               try:
                   detail = json.loads(detail_path[-1].read_text())
-                  lines += ["", "### Per-source breakdown", "", "| Source | Fetched | High-risk |", "|--------|---------|-----------|"]
+                  lines += ["", "### Per-source breakdown", "", "| Source | Fetched | Safe | Suspicious | Scam |", "|--------|---------|------|------------|------|"]
                   for src in detail.get("sources", []):
-                      lines.append(f"| {src['name']} | {src['jobs_fetched']} | {src['high_risk']} |")
+                      lines.append(f"| {src['name']} | {src['jobs_fetched']} | {src.get('safe', 0)} | {src.get('suspicious', 0)} | {src.get('scam', 0)} |")
               except Exception:
                   pass
 
@@ -223,70 +293,97 @@ jobs:
       - name: Publish verified jobs to website
         run: |
           mkdir -p docs/data
-          python3 -c "
-          import json, os, glob
+          python3 << 'PYEOF'
+          import json, glob
           from datetime import datetime, timezone
+          from pathlib import Path
 
-          results_file = 'scan-results/scan_'$(date +%Y-%m-%d)'.json'
-          if not os.path.exists(results_file):
-              files = sorted(glob.glob('scan-results/scan_*.json'))
-              results_file = files[-1] if files else None
-
-          if not results_file:
-              print('No scan results found, skipping publish')
+          files = sorted(glob.glob("scan-results/scan_*.json"))
+          if not files:
+              print("No scan results found, skipping publish")
               exit(0)
 
-          with open(results_file) as f:
+          with open(files[-1]) as f:
               data = json.load(f)
 
           now = datetime.now(timezone.utc).isoformat()
-          verified = []
+          all_jobs = data.get("all_jobs", [])
+
+          verified = [j for j in all_jobs if j.get("scam_score", 1.0) < 0.20]
+          verified.sort(key=lambda j: j["scam_score"])
+
           stats = {
-              'total_scanned': 0,
-              'total_safe': 0,
-              'total_suspicious': 0,
-              'total_scam': 0,
-              'last_scan': now,
-              'sources': [],
+              "total_scanned": len(all_jobs),
+              "total_safe": len([j for j in all_jobs if j.get("scam_score", 1) < 0.20]),
+              "total_suspicious": len([j for j in all_jobs if 0.20 <= j.get("scam_score", 1) < 0.60]),
+              "total_scam": len([j for j in all_jobs if j.get("scam_score", 1) >= 0.60]),
+              "last_scan": now,
+              "sources": list({s["name"] for s in data.get("sources", [])}),
           }
 
-          for source in data.get('sources', []):
-              source_name = source.get('name', 'Unknown')
-              stats['sources'].append(source_name)
-              jobs = source.get('jobs', [])
-              stats['total_scanned'] += len(jobs)
-              for job in jobs:
-                  score = job.get('scam_score', 1.0)
-                  if score < 0.20:
-                      stats['total_safe'] += 1
-                      verified.append({
-                          'title': job.get('title', ''),
-                          'company': job.get('company', ''),
-                          'location': job.get('location', 'Remote'),
-                          'salary_min': job.get('salary_min', 0),
-                          'salary_max': job.get('salary_max', 0),
-                          'source': source_name,
-                          'url': job.get('url', job.get('id', '')),
-                          'scam_score': round(score, 3),
-                          'signal_count': job.get('signal_count', 0),
-                          'verified_at': now,
-                      })
-                  elif score < 0.60:
-                      stats['total_suspicious'] += 1
-                  else:
-                      stats['total_scam'] += 1
+          with open("docs/data/verified-jobs.json", "w") as f:
+              json.dump({"jobs": verified, "updated": now, "count": len(verified)}, f, indent=2)
 
-          verified.sort(key=lambda j: j['scam_score'])
-          verified = verified[:50]
-
-          with open('docs/data/verified-jobs.json', 'w') as f:
-              json.dump({'jobs': verified, 'updated': now, 'count': len(verified)}, f, indent=2)
-
-          with open('docs/data/scan-stats.json', 'w') as f:
+          with open("docs/data/scan-stats.json", "w") as f:
               json.dump(stats, f, indent=2)
 
-          print(f'Published {len(verified)} verified jobs, {stats["total_scanned"]} total scanned')
-          "
+          print(f"Published {len(verified)} verified jobs from {stats['total_scanned']} scanned")
+          PYEOF
+
+      - name: Push to Worker API
+        if: ${{ secrets.WORKER_INGEST_URL != '' && secrets.WORKER_INGEST_KEY != '' }}
+        env:
+          WORKER_INGEST_URL: ${{ secrets.WORKER_INGEST_URL }}
+          WORKER_INGEST_KEY: ${{ secrets.WORKER_INGEST_KEY }}
+        run: |
+          python3 << 'PYEOF'
+          import json, glob, os
+          try:
+              import httpx
+          except ImportError:
+              print("httpx not available, skipping Worker push")
+              exit(0)
+
+          files = sorted(glob.glob("scan-results/scan_*.json"))
+          if not files:
+              print("No scan results, skipping Worker push")
+              exit(0)
+
+          with open(files[-1]) as f:
+              data = json.load(f)
+
+          all_jobs = data.get("all_jobs", [])
+          if not all_jobs:
+              print("No jobs to push")
+              exit(0)
+
+          url = os.environ["WORKER_INGEST_URL"]
+          key = os.environ["WORKER_INGEST_KEY"]
+
+          batch_size = 100
+          total_inserted = 0
+          total_errors = 0
+
+          with httpx.Client(timeout=30) as client:
+              for i in range(0, len(all_jobs), batch_size):
+                  batch = all_jobs[i:i + batch_size]
+                  try:
+                      resp = client.post(
+                          f"{url}/api/jobs/ingest",
+                          json={"jobs": batch},
+                          headers={"Authorization": f"Bearer {key}"},
+                      )
+                      resp.raise_for_status()
+                      result = resp.json()
+                      total_inserted += result.get("inserted", 0)
+                      total_errors += len(result.get("errors", []))
+                      print(f"  Batch {i // batch_size + 1}: {result.get('inserted', 0)} inserted")
+                  except Exception as e:
+                      print(f"  Batch {i // batch_size + 1} failed: {e}")
+                      total_errors += len(batch)
+
+          print(f"\nWorker push complete: {total_inserted} inserted, {total_errors} errors")
+          PYEOF
 
       - name: Commit scan data to docs
         run: |
