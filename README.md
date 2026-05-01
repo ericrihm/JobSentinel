@@ -4,7 +4,7 @@
 # JobSentinel
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-400%20passing-brightgreen.svg)](#development)
+[![Tests](https://img.shields.io/badge/tests-488%20passing-brightgreen.svg)](#development)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-purple.svg)](https://github.com/astral-sh/ruff)
 
@@ -334,7 +334,7 @@ python -m pytest tests/test_security.py -v
 ruff check sentinel/
 ```
 
-**400 tests** across 14 test files covering:
+**488 tests** across 21 test files covering:
 
 | Test File | What It Covers |
 |-----------|---------------|
@@ -351,7 +351,11 @@ ruff check sentinel/
 | `test_innovation_strategies.py` | Signal correlation, keyword expansion, pattern mining |
 | `test_property.py` | Hypothesis fuzzing: signals, scorer, build_result |
 | `test_flywheel.py` | CUSUM detector, signal weight tracker, detection flywheel |
-| `test_cli.py` | CLI commands: analyze, validate, report, patterns, stats |
+| `test_cli.py` | CLI commands: analyze, validate, report, patterns, stats, ingest, auto |
+| `test_sources.py` | Job board adapters: RemoteOK, Adzuna, Muse, USAJobs, Remotive |
+| `test_ingest.py` | Ingestion pipeline, dedup, flywheel integration |
+| `test_throttle.py` | Per-domain rate limiting, backoff, circuit breaker |
+| `test_analyzer_ai.py` | AI escalation: Haiku/Sonnet tiers, fallbacks, disabled |
 
 ### Security
 

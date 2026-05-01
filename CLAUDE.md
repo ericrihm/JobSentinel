@@ -19,8 +19,11 @@ sentinel/
   web/               — React frontend: job analysis dashboard, browser extension popup, scam pattern explorer
   ecosystem.py       — ctools integration: publish observations to engram, events to interop mesh, flywheel state to session-bridge
   innovation.py      — Innovation flywheel: 8 Thompson Sampling strategies (FP/FN review, weight optimization, pattern mining, regression check, signal correlation, keyword expansion, threshold tuning)
-  cli.py             — CLI: analyze, validate, report, patterns, stats, evolve, innovate, ecosystem, init, serve
-  db.py              — SQLite persistence with FTS5 search, WAL mode
+  sources.py         — Job board adapters: RemoteOK, Adzuna, The Muse, USAJobs, Remotive
+  ingest.py          — Ingestion pipeline: fetch → deduplicate → score → persist → flywheel
+  throttle.py        — Smart per-domain rate limiting, exponential backoff, circuit breaker
+  cli.py             — CLI: analyze, validate, report, patterns, stats, evolve, innovate, ingest, auto, serve
+  db.py              — SQLite persistence with FTS5 search, WAL mode, ingestion tracking
   config.py          — TOML config loading
 ```
 
@@ -96,7 +99,7 @@ sentinel extension-build                 — Build browser extension
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v    # 400 tests
+python -m pytest tests/ -v    # 488 tests
 ```
 
 ## Codexbro Integration
@@ -115,7 +118,12 @@ Registered with codexbro for overnight autonomous building. Task specs in `docs/
 - Added batch analysis (--file flag)
 - Security hardening (input validation, command injection, HTML sanitization)
 - Browser extension scaffold (Chrome MV3)
-- Test coverage: 154 → 400 tests (flywheel, API, CLI, scan, rate limiting, property, innovation, parameterized-query safety all covered)
+- Test coverage: 154 → 488 tests (flywheel, API, CLI, scan, rate limiting, property, innovation, ingestion, sources, throttle, AI tier all covered)
+- Multi-source job ingestion: RemoteOK, Adzuna, The Muse, USAJobs, Remotive adapters
+- Smart throttling: per-domain rate limiting, exponential backoff, circuit breaker
+- Ingestion pipeline: fetch → deduplicate → score → persist → flywheel automation
+- CLI: `sentinel ingest`, `sentinel ingest-history`, `sentinel auto` commands
+- Zero ruff lint errors
 
 ## Storage
 
