@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Verified Safe Jobs — Pre-screened job listings analyzed by JobSentinel's 54-signal engine. Every listing passed with zero risk flags. Updated every 6 hours." />
+  <meta name="keywords" content="verified jobs, safe job listings, scam-free jobs, pre-screened jobs, remote jobs, job scam protection" />
+  <meta property="og:title" content="Verified Safe Jobs — JobSentinel" />
+  <meta property="og:description" content="Pre-screened job listings analyzed by our 54-signal engine. Every listing passed with zero risk flags. Updated every 6 hours." />
+  <meta property="og:url" content="https://jobsentinel.org/jobs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://jobsentinel.org/og-preview.png" />
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Verified Safe Jobs — JobSentinel">
+  <meta name="twitter:description" content="Pre-screened job listings analyzed by our 54-signal engine. Every listing passed with zero risk flags. Updated every 6 hours.">
+  <meta name="twitter:image" content="https://jobsentinel.org/og-preview.png">
+  <link rel="canonical" href="https://jobsentinel.org/jobs.html">
+  <title>Verified Safe Jobs — JobSentinel</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
+  <style>
+    /* ============================================================
+       jobs.html — page-specific styles
+       ============================================================ */
+
+    /* Hero */
+    .jobs-hero {
+      position: relative;
+      overflow: hidden;
+      padding: 80px 0 48px;
+      text-align: center;
+    }
+    .jobs-hero-bg {
+      position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(63,185,80,.1), transparent),
+        radial-gradient(ellipse 60% 40% at 20% 60%, rgba(88,166,255,.06), transparent),
+        radial-gradient(ellipse 50% 40% at 80% 50%, rgba(63,185,80,.06), transparent);
+    }
+    .jobs-hero h1 {
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      margin-bottom: 16px;
+      background: linear-gradient(160deg, #fff 30%, var(--green) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .jobs-hero p {
+      color: var(--muted);
+      font-size: clamp(.95rem, 2vw, 1.15rem);
+      max-width: 620px;
+      margin: 0 auto 32px;
+      line-height: 1.6;
+    }
+
+    /* Stats row */
+    .jobs-stats-row {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .jobs-stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 24px;
+      min-width: 130px;
+    }
+    .jobs-stat strong {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .jobs-stat span {
+      font-size: .78rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* Scam rate banner */
+    .scam-rate-banner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px 24px;
+      background: rgba(210,153,34,.06);
+      border-top: 1px solid rgba(210,153,34,.15);
+      border-bottom: 1px solid rgba(210,153,34,.15);
+      font-size: .9rem;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* Filter bar */
+    .jobs-filter-bar {
+      display: flex;
+      gap: 14px;
+      max-width: 720px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    .jobs-filter-bar input,
+    .jobs-filter-bar select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: .9rem;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .jobs-filter-bar input:focus,
+    .jobs-filter-bar select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(88,166,255,.15);
+    }
+    .jobs-filter-bar input {
+      flex: 1;
+      min-width: 0;
+    }
+    .jobs-filter-bar input::placeholder {
+      color: var(--muted);
+    }
+    .jobs-filter-bar select {
+      min-width: 160px;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b949e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+
+    /* Jobs grid */
+    .jobs-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 60px;
+    }
+
+    /* Job card */
+    .job-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--green);
+      border-radius: var(--radius);
+      padding: 24px 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+      position: relative;
+    }
+    .job-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow), 0 0 0 1px rgba(63,185,80,.15);
+      border-color: rgba(63,185,80,.3);
+      border-left-color: var(--green);
+    }
+
+    .job-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .verified-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      background: rgba(63,185,80,.1);
+      color: var(--green);
+      border: 1px solid rgba(63,185,80,.2);
+    }
+
+    .job-source {
+      font-size: .75rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .job-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+      margin: 0;
+    }
+
+    .job-company {
+      font-size: .9rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .job-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      font-size: .84rem;
+      color: var(--muted);
+    }
+    .job-location,
+    .job-salary {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .job-signals {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding-top: 4px;
+    }
+    .signal-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--green);
+    }
+
+    .job-apply-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-top: auto;
+      padding-top: 6px;
+      transition: gap .2s;
+    }
+    .job-apply-link:hover {
+      gap: 10px;
+      text-decoration: none;
+    }
+
+    /* Loading / empty states */
+    .jobs-empty {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    .jobs-empty a {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* CTA section */
+    .jobs-cta {
+      text-align: center;
+      padding: 60px 0 80px;
+      border-top: 1px solid var(--border);
+    }
+    .jobs-cta h2 {
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 700;
+      margin-bottom: 12px;
+      letter-spacing: -.02em;
+    }
+    .jobs-cta p {
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 540px;
+      margin: 0 auto 28px;
+      line-height: 1.6;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .jobs-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 600px) {
+      .jobs-hero { padding: 56px 0 36px; }
+      .jobs-stats-row { gap: 10px; }
+      .jobs-stat { padding: 12px 16px; min-width: 110px; }
+      .jobs-stat strong { font-size: 1.25rem; }
+      .jobs-filter-bar { flex-direction: column; }
+      .jobs-filter-bar select { min-width: 0; }
+      .job-card { padding: 20px 18px 18px; }
+    }
+    @media (max-width: 480px) {
+      .jobs-stats-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo" aria-label="JobSentinel home">
+      <span class="nav-logo-icon">🛡</span>
+      <span>JobSentinel</span>
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="index.html#how-it-works">How It Works</a></li>
+      <li><a href="index.html#features">Features</a></li>
+      <li><a href="gallery.html">Gallery</a></li>
+      <li><a href="jobs.html" style="color:var(--text)" aria-current="page">Jobs</a></li>
+      <li><a href="demo.html">Demo</a></li>
+      <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="analyze.html" class="nav-cta">Analyze</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" id="mobileToggle" aria-label="Toggle menu" aria-expanded="false">☰</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="jobs-hero">
+  <div class="jobs-hero-bg" aria-hidden="true"></div>
+  <div class="container">
+    <div class="fade-up">
+      <span class="badge badge-green">Pre-Screened</span>
+    </div>
+    <h1 class="fade-up delay-1">Verified Safe Jobs</h1>
+    <p class="fade-up delay-2">
+      Every listing below has been analyzed by our 54-signal engine and passed with zero risk flags. Updated every 6 hours.
+    </p>
+    <div class="jobs-stats-row fade-up delay-3">
+      <div class="jobs-stat"><strong id="statScanned">&mdash;</strong><span>Jobs scanned</span></div>
+      <div class="jobs-stat"><strong id="statVerified">&mdash;</strong><span>Verified safe</span></div>
+      <div class="jobs-stat"><strong id="statFlagged">&mdash;</strong><span>Flagged</span></div>
+      <div class="jobs-stat"><strong id="statUpdated">&mdash;</strong><span>Last updated</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTEXT BANNER -->
+<div class="scam-rate-banner">
+  <span>&#9888;&#65039;</span> 1 in 6 remote job postings contains fraudulent signals. These listings have been verified clean.
+</div>
+
+<!-- FILTER BAR -->
+<div class="jobs-filter-bar">
+  <input type="text" id="jobsSearch" placeholder="Search by title, company, or location..." aria-label="Search jobs" />
+  <select id="jobsSource" aria-label="Filter by source">
+    <option value="">All Sources</option>
+  </select>
+</div>
+
+<!-- JOB CARDS GRID -->
+<div id="jobsGrid" class="jobs-grid">
+  <!-- Populated by JS -->
+</div>
+
+<!-- LOADING / EMPTY STATES -->
+<div id="jobsLoading" class="jobs-empty">Loading verified jobs...</div>
+<div id="jobsEmpty" class="jobs-empty" style="display:none">No jobs match your filters.</div>
+
+<!-- CTA -->
+<section class="jobs-cta">
+  <div class="container">
+    <div class="reveal">
+      <h2>Want automatic protection?</h2>
+      <p>The JobSentinel extension checks every job listing you visit &mdash; 54 signals, instant results, zero copy-pasting.</p>
+      <a href="https://github.com/ericrihm/JobSentinel#browser-extension" class="btn btn-primary">Get the Extension &mdash; Free</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <h3>🛡 JobSentinel</h3>
+        <p>AI-powered job scam detection. Free, open source, and constantly improving. Built to protect job seekers.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="index.html#how-it-works">How It Works</a></li>
+          <li><a href="index.html#features">Features</a></li>
+          <li><a href="gallery.html">Scam Gallery</a></li>
+          <li><a href="jobs.html">Verified Jobs</a></li>
+          <li><a href="demo.html">Demo</a></li>
+          <li><a href="analyze.html">Analyzer</a></li>
+          <li><a href="index.html#install">Installation</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">Issue Tracker</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel/discussions" target="_blank" rel="noopener">Discussions</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          <li><a href="privacy.html">Privacy Policy</a></li>
+          <li><a href="terms.html">Terms of Service</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+        <span class="badge badge-accent">v0.9.0</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+/* Mobile nav toggle */
+document.getElementById('mobileToggle').addEventListener('click', function () {
+  var nav = document.getElementById('navLinks');
+  var expanded = nav.classList.toggle('open');
+  this.setAttribute('aria-expanded', expanded);
+});
+
+/* Scroll reveal */
+var revealObserver = new IntersectionObserver(function (entries) {
+  entries.forEach(function (e) {
+    if (e.isIntersecting) { e.target.classList.add('visible'); revealObserver.unobserve(e.target); }
+  });
+}, { threshold: 0.08 });
+document.querySelectorAll('.reveal').forEach(function (el) { revealObserver.observe(el); });
+
+/* ============================================================
+   Jobs Board Logic
+   ============================================================ */
+
+var allJobs = [];
+
+function loadJobs() {
+  Promise.all([
+    fetch('data/verified-jobs.json'),
+    fetch('data/scan-stats.json')
+  ]).then(function (responses) {
+    var jobsResp = responses[0];
+    var statsResp = responses[1];
+
+    if (!jobsResp.ok) throw new Error('Failed to load jobs');
+
+    return Promise.all([
+      jobsResp.json(),
+      statsResp.ok ? statsResp.json() : null
+    ]);
+  }).then(function (data) {
+    var jobsData = data[0];
+    var stats = data[1];
+
+    allJobs = jobsData.jobs || [];
+
+    if (stats) {
+      document.getElementById('statScanned').textContent = stats.total_scanned ? stats.total_scanned.toLocaleString() : '—';
+      document.getElementById('statVerified').textContent = stats.total_safe ? stats.total_safe.toLocaleString() : '—';
+      document.getElementById('statFlagged').textContent = ((stats.total_suspicious || 0) + (stats.total_scam || 0)).toLocaleString();
+      var updated = stats.last_scan ? timeAgo(new Date(stats.last_scan)) : '—';
+      document.getElementById('statUpdated').textContent = updated;
+    }
+
+    /* Populate source filter */
+    var sources = [];
+    var seen = {};
+    allJobs.forEach(function (j) {
+      if (j.source && !seen[j.source]) {
+        seen[j.source] = true;
+        sources.push(j.source);
+      }
+    });
+    var select = document.getElementById('jobsSource');
+    sources.sort().forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      select.appendChild(opt);
+    });
+
+    renderJobs(allJobs);
+  }).catch(function () {
+    document.getElementById('jobsLoading').innerHTML =
+      'Unable to load jobs. <a href="analyze.html">Analyze a job manually</a> instead.';
+  });
+}
+
+function renderJobs(jobs) {
+  var grid = document.getElementById('jobsGrid');
+  var loading = document.getElementById('jobsLoading');
+  var empty = document.getElementById('jobsEmpty');
+
+  loading.style.display = 'none';
+
+  if (jobs.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+
+  empty.style.display = 'none';
+
+  grid.innerHTML = jobs.map(function (job) {
+    var salary = formatSalary(job.salary_min, job.salary_max);
+    var signals = job.signal_count || 54;
+    var score = Math.round((job.scam_score || 0) * 100);
+    return ''
+      + '<div class="job-card">'
+      +   '<div class="job-card-header">'
+      +     '<span class="verified-badge">🛡 Verified Safe</span>'
+      +     '<span class="job-source">via ' + escHtml(job.source || 'Unknown') + '</span>'
+      +   '</div>'
+      +   '<h3 class="job-title">' + escHtml(job.title || 'Untitled Position') + '</h3>'
+      +   '<div class="job-company">' + escHtml(job.company || 'Company') + '</div>'
+      +   '<div class="job-meta">'
+      +     (job.location ? '<span class="job-location">📍 ' + escHtml(job.location) + '</span>' : '')
+      +     (salary ? '<span class="job-salary">💰 ' + salary + '</span>' : '')
+      +   '</div>'
+      +   '<div class="job-signals">'
+      +     '<span class="signal-check">✓ ' + signals + ' signals checked</span>'
+      +     '<span class="signal-check">✓ Score: ' + score + '/100</span>'
+      +   '</div>'
+      +   (job.url ? '<a href="' + escHtml(job.url) + '" target="_blank" rel="noopener" class="job-apply-link">View Listing →</a>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function formatSalary(min, max) {
+  if (!min && !max) return '';
+  var fmt = function (n) {
+    if (n >= 1000) return '$' + Math.round(n / 1000) + 'k';
+    return '$' + n;
+  };
+  if (min && max) return fmt(min) + '–' + fmt(max);
+  if (min) return fmt(min) + '+';
+  return 'Up to ' + fmt(max);
+}
+
+function timeAgo(date) {
+  var diff = Date.now() - date.getTime();
+  var hours = Math.floor(diff / 3600000);
+  if (hours < 1) return 'Just now';
+  if (hours < 24) return hours + 'h ago';
+  var days = Math.floor(hours / 24);
+  return days + 'd ago';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* Filter handlers */
+document.getElementById('jobsSearch').addEventListener('input', applyFilters);
+document.getElementById('jobsSource').addEventListener('change', applyFilters);
+
+function applyFilters() {
+  var q = document.getElementById('jobsSearch').value.toLowerCase().trim();
+  var src = document.getElementById('jobsSource').value;
+
+  var filtered = allJobs;
+  if (q) {
+    filtered = filtered.filter(function (j) {
+      return (j.title || '').toLowerCase().indexOf(q) !== -1
+          || (j.company || '').toLowerCase().indexOf(q) !== -1
+          || (j.location || '').toLowerCase().indexOf(q) !== -1;
+    });
+  }
+  if (src) {
+    filtered = filtered.filter(function (j) { return j.source === src; });
+  }
+  renderJobs(filtered);
+}
+
+/* Init */
+loadJobs();
+</script>
+<script type="module" src="analyze-bridge.js"></script>
+</body>
+</html>

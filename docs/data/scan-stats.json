@@ -1,0 +1,15 @@
+{
+  "sample": true,
+  "total_scanned": 125,
+  "total_safe": 5,
+  "total_suspicious": 38,
+  "total_scam": 82,
+  "last_scan": "2026-05-01T00:00:00+00:00",
+  "sources": [
+    "RemoteOK",
+    "Adzuna",
+    "TheMuse",
+    "USAJobs",
+    "Remotive"
+  ]
+}

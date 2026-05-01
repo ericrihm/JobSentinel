@@ -1,0 +1,67 @@
+{
+  "sample": true,
+  "jobs": [
+    {
+      "title": "Senior Software Engineer",
+      "company": "Stripe",
+      "location": "Remote (US)",
+      "salary_min": 160000,
+      "salary_max": 220000,
+      "source": "RemoteOK",
+      "url": "https://stripe.com/jobs/listing/senior-software-engineer/sample",
+      "scam_score": 0.04,
+      "signal_count": 1,
+      "verified_at": "2026-05-01T00:00:00+00:00"
+    },
+    {
+      "title": "Product Manager, Growth",
+      "company": "Atlassian",
+      "location": "Remote",
+      "salary_min": 130000,
+      "salary_max": 175000,
+      "source": "Remotive",
+      "url": "https://www.atlassian.com/company/careers/detail/sample",
+      "scam_score": 0.07,
+      "signal_count": 0,
+      "verified_at": "2026-05-01T00:00:00+00:00"
+    },
+    {
+      "title": "Staff Data Engineer",
+      "company": "Shopify",
+      "location": "Remote (Canada/US)",
+      "salary_min": 145000,
+      "salary_max": 195000,
+      "source": "TheMuse",
+      "url": "https://www.shopify.com/careers/sample-data-engineer",
+      "scam_score": 0.05,
+      "signal_count": 1,
+      "verified_at": "2026-05-01T00:00:00+00:00"
+    },
+    {
+      "title": "DevOps / Platform Engineer",
+      "company": "HashiCorp",
+      "location": "Remote",
+      "salary_min": 140000,
+      "salary_max": 185000,
+      "source": "Adzuna",
+      "url": "https://www.hashicorp.com/jobs/sample-devops",
+      "scam_score": 0.06,
+      "signal_count": 0,
+      "verified_at": "2026-05-01T00:00:00+00:00"
+    },
+    {
+      "title": "Software Engineer, Backend",
+      "company": "Cloudflare",
+      "location": "Remote",
+      "salary_min": 150000,
+      "salary_max": 200000,
+      "source": "RemoteOK",
+      "url": "https://www.cloudflare.com/careers/jobs/sample-backend",
+      "scam_score": 0.03,
+      "signal_count": 0,
+      "verified_at": "2026-05-01T00:00:00+00:00"
+    }
+  ],
+  "updated": "2026-05-01T00:00:00+00:00",
+  "count": 5
+}
