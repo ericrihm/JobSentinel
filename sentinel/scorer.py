@@ -1,24 +1,95 @@
 """Bayesian scam scoring with Thompson Sampling for signal weight learning."""
 
 import json
+import logging
 import math
 import os
 import random
 
 from sentinel.models import JobPosting, RiskLevel, ScamSignal, SignalCategory, ValidationResult
 
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Learned-weight cache (loaded once per process from DB)
+# ---------------------------------------------------------------------------
+
+_learned_weights_cache: dict[str, float] | None = None
+
+# Minimum observations before a learned weight overrides the static default.
+_MIN_OBSERVATIONS = 10
+
+
+def _load_learned_weights(db_path: str = "") -> dict[str, float]:
+    """Query the DB for all active patterns and return {signal_name: bayesian_weight}.
+
+    The result is cached at module level so the DB is only hit once per
+    process.  If the DB is unavailable or empty, returns an empty dict and
+    scoring falls back to static weights.
+    """
+    global _learned_weights_cache
+    if _learned_weights_cache is not None:
+        return _learned_weights_cache
+
+    weights: dict[str, float] = {}
+    try:
+        from sentinel.db import SentinelDB  # deferred to keep import lightweight
+
+        db = SentinelDB(path=db_path) if db_path else SentinelDB()
+        rows = db.get_patterns(status="active")
+        for row in rows:
+            obs = row.get("observations", 0)
+            if obs < _MIN_OBSERVATIONS:
+                continue
+            alpha = row.get("alpha", 1.0)
+            beta = row.get("beta", 1.0)
+            total = alpha + beta
+            if total <= 0:
+                continue
+            # Use pattern_id as the key — it matches signal names in the DB
+            pid = row.get("pattern_id", "")
+            name = row.get("name", "")
+            bayesian_w = alpha / total
+            if pid:
+                weights[pid] = bayesian_w
+            if name and name != pid:
+                weights[name] = bayesian_w
+        db.close()
+    except Exception:
+        # DB missing, locked, or schema mismatch — fall back gracefully
+        logger.debug("Could not load learned weights from DB; using static defaults", exc_info=True)
+        weights = {}
+
+    _learned_weights_cache = weights
+    return _learned_weights_cache
+
+
+def _reset_learned_weights_cache() -> None:
+    """Clear the module-level cache (used by tests and after flywheel cycles)."""
+    global _learned_weights_cache
+    _learned_weights_cache = None
+
 
 # ---------------------------------------------------------------------------
 # Core scoring
 # ---------------------------------------------------------------------------
 
-def score_signals(signals: list[ScamSignal]) -> tuple[float, float]:
+def score_signals(
+    signals: list[ScamSignal],
+    *,
+    db_path: str = "",
+    use_learned_weights: bool = True,
+) -> tuple[float, float]:
     """Compute scam score and confidence from extracted signals.
 
     Uses weighted Bayesian combination:
     - Positive signals reduce score
     - Red flags and warnings increase score
     - Confidence is based on number and agreement of signals
+
+    When *use_learned_weights* is True (the default), the scorer will try to
+    load Bayesian posterior weights from the DB and use them in place of the
+    hard-coded signal weights for any pattern that has >= 10 observations.
 
     Returns (scam_score 0-1, confidence 0-1)
     """
@@ -27,10 +98,24 @@ def score_signals(signals: list[ScamSignal]) -> tuple[float, float]:
 
     _POSITIVE = SignalCategory.POSITIVE
 
+    # Try loading learned weights from the DB
+    learned: dict[str, float] = {}
+    if use_learned_weights:
+        try:
+            learned = _load_learned_weights(db_path=db_path)
+        except Exception:
+            learned = {}
+
     # Log-odds accumulation: start at log-odds 0 (= 50% prior)
     log_odds = 0.0
     for s in signals:
-        w = max(1e-6, min(1.0 - 1e-6, s.weight))
+        # Check for a learned weight override (match on signal name)
+        if s.name in learned:
+            w = learned[s.name]
+        else:
+            w = s.weight
+
+        w = max(1e-6, min(1.0 - 1e-6, w))
         # Positive signals move log-odds toward "legitimate"
         if s.category == _POSITIVE:
             # Positive signal: weight is chance-of-scam, so (1-w)/w is the

@@ -6,6 +6,7 @@ from typing import Optional
 from sentinel.models import JobPosting, ScamSignal, SignalCategory, ValidationResult, RiskLevel
 from sentinel.signals import extract_signals
 from sentinel.scorer import build_result
+from sentinel.config import get_config
 
 try:
     import anthropic as _anthropic
@@ -16,8 +17,13 @@ except ImportError:
 _AMBIGUOUS_LOW = 0.3
 _AMBIGUOUS_HIGH = 0.7
 
-_HAIKU_MODEL = "claude-haiku-4-5"
-_SONNET_MODEL = "claude-sonnet-4-6"
+
+def _haiku_model() -> str:
+    return get_config().ai_model
+
+
+def _sonnet_model() -> str:
+    return get_config().ai_model_deep
 
 _SYSTEM_PROMPT = (
     "You are an expert at detecting fraudulent and scam job postings on LinkedIn. "
@@ -80,6 +86,9 @@ def _escalate_to_ai(
     - If still ambiguous, escalate to sonnet
     Falls back gracefully if anthropic not installed.
     """
+    if not get_config().ai_enabled:
+        return ("", "disabled")
+
     if not _ANTHROPIC_AVAILABLE:
         return ("", "none")
 
@@ -108,10 +117,13 @@ def _escalate_to_ai(
 
     client = _anthropic.Anthropic()
 
+    haiku = _haiku_model()
+    sonnet = _sonnet_model()
+
     # Tier 1: Haiku (fast, cheap)
     try:
         response = client.messages.create(
-            model=_HAIKU_MODEL,
+            model=haiku,
             max_tokens=512,
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
@@ -120,14 +132,14 @@ def _escalate_to_ai(
             (b.text for b in response.content if b.type == "text"), ""
         )
         if analysis:
-            return (analysis, _HAIKU_MODEL)
+            return (analysis, haiku)
     except Exception:
         pass
 
     # Tier 2: Sonnet (deeper analysis for persistent ambiguity)
     try:
         response = client.messages.create(
-            model=_SONNET_MODEL,
+            model=sonnet,
             max_tokens=1024,
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
@@ -136,7 +148,7 @@ def _escalate_to_ai(
             (b.text for b in response.content if b.type == "text"), ""
         )
         if analysis:
-            return (analysis, _SONNET_MODEL)
+            return (analysis, sonnet)
     except Exception:
         pass
 

@@ -6,9 +6,77 @@ No runtime dependencies beyond Python stdlib.
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 from sentinel.models import JobPosting
+
+# ---------------------------------------------------------------------------
+# Date helpers
+# ---------------------------------------------------------------------------
+
+_RELATIVE_PATTERNS = [
+    (re.compile(r'\bjust\s+now\b', re.I), lambda m: 0),
+    (re.compile(r'\btoday\b', re.I), lambda m: 0),
+    (re.compile(r'\byesterday\b', re.I), lambda m: 1),
+    (re.compile(r'(\d+)\s*hours?\s*ago', re.I), lambda m: 0),
+    (re.compile(r'(\d+)\s*days?\s*ago', re.I), lambda m: int(m.group(1))),
+    (re.compile(r'(\d+)\s*weeks?\s*ago', re.I), lambda m: int(m.group(1)) * 7),
+    (re.compile(r'(\d+)\s*months?\s*ago', re.I), lambda m: int(m.group(1)) * 30),
+]
+
+
+def _parse_relative_date(text: str) -> Optional[int]:
+    """Parse a relative date string into days since posted.
+
+    Returns the number of days as an int, or None if the text is not
+    recognised as a relative date expression.
+    """
+    for pattern, fn in _RELATIVE_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            return fn(m)
+    return None
+
+
+def _days_since_posted(date_str: str) -> Optional[int]:
+    """Return the number of days since a posting date string.
+
+    Handles:
+    - ISO 8601 dates:        "2026-04-15"
+    - ISO 8601 with time:    "2026-04-15T10:30:00+00:00"
+    - Relative expressions:  "3 days ago", "2 weeks ago", "1 month ago",
+                             "yesterday", "just now", "today"
+
+    Returns None for empty or unrecognised inputs.
+    """
+    if not date_str or not date_str.strip():
+        return None
+
+    text = date_str.strip()
+
+    # Try relative patterns first (they may contain ISO-like substrings in edge
+    # cases, so check before attempting ISO parse)
+    relative = _parse_relative_date(text)
+    if relative is not None:
+        return relative
+
+    # Try ISO 8601 (Python 3.11+ fromisoformat handles timezone offsets)
+    # Fall back to stripping timezone for older pythons if needed.
+    for fmt_text in (text, text[:10]):  # try full string then date-only prefix
+        try:
+            parsed = datetime.fromisoformat(fmt_text)
+            # Make timezone-aware for comparison
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            delta = now - parsed
+            return max(0, delta.days)
+        except ValueError:
+            continue
+
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Salary extraction
@@ -262,6 +330,19 @@ def _strip_html(html: str) -> str:
     return _WHITESPACE_RE.sub(" ", text).strip()
 
 
+_SCRIPT_TAG_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.DOTALL | re.IGNORECASE)
+_STYLE_TAG_RE = re.compile(r"<style\b[^>]*>.*?</style\s*>", re.DOTALL | re.IGNORECASE)
+_ON_EVENT_RE = re.compile(r'\s+on\w+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]*)', re.IGNORECASE)
+
+
+def _sanitize_html(html: str) -> str:
+    """Strip dangerous HTML: script/style tags and inline event handlers."""
+    html = _SCRIPT_TAG_RE.sub("", html)
+    html = _STYLE_TAG_RE.sub("", html)
+    html = _ON_EVENT_RE.sub("", html)
+    return html
+
+
 # ---------------------------------------------------------------------------
 # Core text parser
 # ---------------------------------------------------------------------------
@@ -410,6 +491,8 @@ def parse_job_html(html: str, url: str = "") -> JobPosting:
     2. Regex-match LinkedIn-specific HTML class patterns.
     3. Strip all HTML and call parse_job_text as final fallback.
     """
+    html = _sanitize_html(html)
+
     # --- Pass 1: JSON-LD ---
     ld = _extract_json_ld(html)
     if ld:
