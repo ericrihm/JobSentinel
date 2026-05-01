@@ -756,7 +756,7 @@ class DetectionFlywheel:
                     for p in self.db.get_patterns(status="active"):
                         pid = p.get("pattern_id", "")
                         if pid:
-                            candidate[pid] = tracker.get_weight(pid)
+                            candidate[pid] = tracker.sample(pid)
                     if candidate:
                         self.shadow.propose_weights(candidate)
                         disagreement_routed = high_disagree
@@ -823,6 +823,18 @@ class DetectionFlywheel:
                     cb(metrics)
                 except Exception:
                     logger.exception("Regression alert callback failed: %s", cb)
+
+        # --- Active learning: identify high-value jobs for review ---
+        review_candidates = 0
+        try:
+            from sentinel.active_learning import select_review_batch
+            batch = select_review_batch(self.db, batch_size=20)
+            review_candidates = len(batch)
+            if review_candidates > 0:
+                logger.info("Active learning: %d candidates selected for review", review_candidates)
+        except Exception:
+            logger.debug("Active learning selection failed (non-fatal)", exc_info=True)
+        metrics["review_candidates"] = review_candidates
 
         self.db.save_flywheel_metrics(metrics)
 
