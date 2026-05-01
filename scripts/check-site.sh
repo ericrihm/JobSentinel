@@ -106,7 +106,7 @@ echo "--- 4. style.css link ---"
 CSS_ERRORS=0
 for page in "${PAGES[@]}"; do
   name=$(basename "$page")
-  if ! grep -q 'href="style\.css"' "$page" 2>/dev/null; then
+  if ! grep -qE 'href="style\.css(\?[^"]*)?"' "$page" 2>/dev/null; then
     fail "$name: missing link to style.css"
     CSS_ERRORS=$((CSS_ERRORS + 1))
   fi

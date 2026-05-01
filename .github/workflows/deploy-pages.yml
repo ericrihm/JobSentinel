@@ -29,6 +29,18 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Cache-bust static assets
+        run: |
+          HASH=$(echo ${{ github.sha }} | cut -c1-8)
+          echo "Cache-busting with hash: $HASH"
+          for f in docs/*.html; do
+            sed -i "s/style\.css?v=[a-f0-9]*/style.css?v=$HASH/g" "$f"
+            sed -i "s/analyze-bridge\.js?v=[a-f0-9]*/analyze-bridge.js?v=$HASH/g" "$f"
+          done
+          if [ -f docs/analyze-bridge.js ]; then
+            sed -i "s/signals-engine\.js?v=[a-f0-9]*/signals-engine.js?v=$HASH/g" docs/analyze-bridge.js
+          fi
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
