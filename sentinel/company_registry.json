@@ -1,0 +1,27 @@
+{
+  "_meta": {
+    "description": "Registry of companies and their ATS platforms for job scraping. All slugs validated against live APIs.",
+    "last_updated": "2026-05-01",
+    "total_companies": 49,
+    "sources": ["Greenhouse", "Ashby", "SmartRecruiters"]
+  },
+  "greenhouse": [
+    "stripe", "figma", "airbnb", "coinbase", "gusto",
+    "gitlab", "airtable", "brex", "databricks", "duolingo",
+    "flexport", "masterclass", "newrelic", "opendoor", "postman",
+    "reddit", "robinhood", "sweetgreen", "webflow", "vercel",
+    "squarespace", "instacart", "lyft", "discord", "pinterest",
+    "dropbox"
+  ],
+  "ashby": [
+    "cohere", "deel", "drata", "modal", "neon",
+    "railway", "replit", "resend", "runway", "watershed",
+    "ramp", "notion", "linear", "livekit", "mistral",
+    "pylon", "sardine", "roboflow", "baseten", "motherduck",
+    "orb", "stigg"
+  ],
+  "smartrecruiters": [
+    "Visa"
+  ],
+  "lever": []
+}

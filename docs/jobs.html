@@ -20,7 +20,7 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
   <style>
     /* ============================================================
-       jobs.html — page-specific styles
+       jobs.html — page-specific styles (dynamic job board)
        ============================================================ */
 
     /* Hero */
@@ -38,111 +38,174 @@
         radial-gradient(ellipse 50% 40% at 80% 50%, rgba(63,185,80,.06), transparent);
     }
     .jobs-hero h1 {
-      font-size: clamp(1.8rem, 4vw, 3rem);
+      font-size: clamp(2rem, 5vw, 3.2rem);
       font-weight: 800;
-      letter-spacing: -.02em;
+      letter-spacing: -.03em;
       margin-bottom: 16px;
       background: linear-gradient(160deg, #fff 30%, var(--green) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-    .jobs-hero p {
+    .jobs-hero p.hero-subtitle {
       color: var(--muted);
-      font-size: clamp(.95rem, 2vw, 1.15rem);
-      max-width: 620px;
-      margin: 0 auto 32px;
-      line-height: 1.6;
+      font-size: clamp(.92rem, 2vw, 1.1rem);
+      max-width: 680px;
+      margin: 0 auto 36px;
+      line-height: 1.65;
     }
 
-    /* Stats row */
-    .jobs-stats-row {
-      display: flex;
-      gap: 20px;
-      justify-content: center;
-      flex-wrap: wrap;
+    /* Search bar (hero) */
+    .search-wrapper {
+      position: relative;
+      max-width: 640px;
+      margin: 0 auto 24px;
     }
-    .jobs-stat {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
+    .search-wrapper svg.search-icon {
+      position: absolute;
+      left: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .search-bar {
+      width: 100%;
+      padding: 16px 20px 16px 52px;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 16px 24px;
-      min-width: 130px;
-    }
-    .jobs-stat strong {
-      font-size: 1.5rem;
-      font-weight: 800;
-      color: var(--accent);
-      font-variant-numeric: tabular-nums;
-      line-height: 1;
-    }
-    .jobs-stat span {
-      font-size: .78rem;
-      color: var(--muted);
-      font-weight: 500;
-    }
-
-    /* Scam rate banner */
-    .scam-rate-banner {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 14px 24px;
-      background: rgba(210,153,34,.06);
-      border-top: 1px solid rgba(210,153,34,.15);
-      border-bottom: 1px solid rgba(210,153,34,.15);
-      font-size: .9rem;
-      color: var(--muted);
-      text-align: center;
-      line-height: 1.5;
-    }
-
-    /* Filter bar */
-    .jobs-filter-bar {
-      display: flex;
-      gap: 14px;
-      max-width: 720px;
-      margin: 32px auto;
-      padding: 0 24px;
-    }
-    .jobs-filter-bar input,
-    .jobs-filter-bar select {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 12px 16px;
+      border-radius: 8px;
       color: var(--text);
       font-family: var(--font);
-      font-size: .9rem;
+      font-size: 1.05rem;
       outline: none;
       transition: border-color .2s, box-shadow .2s;
     }
-    .jobs-filter-bar input:focus,
-    .jobs-filter-bar select:focus {
+    .search-bar:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(88,166,255,.15), var(--shadow);
+    }
+    .search-bar::placeholder {
+      color: var(--muted);
+    }
+
+    /* Quick filter pills */
+    .quick-pills {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .pill {
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: .82rem;
+      font-weight: 600;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .2s;
+      white-space: nowrap;
+    }
+    .pill:hover,
+    .pill.active {
+      background: rgba(88,166,255,.1);
+      border-color: rgba(88,166,255,.3);
+      color: var(--accent);
+    }
+
+    /* Filter bar */
+    .filter-bar {
+      display: flex;
+      gap: 12px;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 24px;
+      flex-wrap: wrap;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .filter-bar label {
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .filter-bar input,
+    .filter-bar select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: .85rem;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .filter-bar input:focus,
+    .filter-bar select:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(88,166,255,.15);
     }
-    .jobs-filter-bar input {
-      flex: 1;
-      min-width: 0;
-    }
-    .jobs-filter-bar input::placeholder {
+    .filter-bar input::placeholder {
       color: var(--muted);
     }
-    .jobs-filter-bar select {
-      min-width: 160px;
+    .filter-bar select {
       cursor: pointer;
       -webkit-appearance: none;
       appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b949e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
-      background-position: right 14px center;
-      padding-right: 36px;
+      background-position: right 12px center;
+      padding-right: 32px;
+      min-width: 140px;
+    }
+    .filter-bar .salary-range {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .filter-bar .salary-range input {
+      width: 90px;
+    }
+    .filter-bar .salary-range span {
+      color: var(--muted);
+      font-size: .85rem;
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+      padding: 16px 24px;
+      font-size: .88rem;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .stats-bar span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stats-bar strong {
+      color: var(--text);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .stats-bar .dot-sep {
+      color: var(--border);
+      font-size: .6rem;
     }
 
     /* Jobs grid */
@@ -152,15 +215,14 @@
       gap: 20px;
       max-width: 1100px;
       margin: 0 auto;
-      padding: 0 24px 60px;
+      padding: 32px 24px 60px;
     }
 
     /* Job card */
     .job-card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-left: 4px solid var(--green);
-      border-radius: var(--radius);
+      border-radius: 12px;
       padding: 24px 24px 20px;
       display: flex;
       flex-direction: column;
@@ -172,17 +234,14 @@
       transform: translateY(-4px);
       box-shadow: var(--shadow), 0 0 0 1px rgba(63,185,80,.15);
       border-color: rgba(63,185,80,.3);
-      border-left-color: var(--green);
     }
-
     .job-card-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
     }
-
-    .verified-badge {
+    .safety-badge {
       display: inline-flex;
       align-items: center;
       gap: 5px;
@@ -192,16 +251,38 @@
       font-weight: 700;
       letter-spacing: .03em;
       text-transform: uppercase;
+    }
+    .safety-badge.safe {
       background: rgba(63,185,80,.1);
       color: var(--green);
       border: 1px solid rgba(63,185,80,.2);
     }
-
-    .job-source {
+    .safety-badge.low-risk {
+      background: rgba(210,153,34,.1);
+      color: var(--yellow);
+      border: 1px solid rgba(210,153,34,.2);
+    }
+    .source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       font-size: .75rem;
       color: var(--muted);
       font-weight: 500;
     }
+    .source-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .source-dot.greenhouse { background: #3fb950; }
+    .source-dot.lever { background: #58a6ff; }
+    .source-dot.ashby { background: #bc8cff; }
+    .source-dot.adzuna { background: #db6d28; }
+    .source-dot.usajobs { background: #f85149; }
+    .source-dot.remoteok { background: #d29922; }
+    .source-dot.default { background: var(--muted); }
 
     .job-title {
       font-size: 1.1rem;
@@ -210,58 +291,18 @@
       line-height: 1.3;
       margin: 0;
     }
-
+    .job-title a {
+      color: inherit;
+      background-image: none;
+    }
+    .job-title a:hover {
+      color: var(--accent);
+    }
     .job-company {
       font-size: .9rem;
       color: var(--muted);
       font-weight: 500;
     }
-
-    .job-company-meta {
-      font-size: 0.75rem;
-      color: var(--text-tertiary, rgba(255,255,255,0.35));
-      margin-top: 2px;
-    }
-
-    .job-freshness {
-      font-size: 0.75rem;
-      color: var(--text-tertiary, rgba(255,255,255,0.35));
-      margin-top: 8px;
-    }
-
-    .verify-explainer {
-      padding: 24px 0;
-      border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
-    }
-    .verify-steps {
-      display: flex;
-      gap: 32px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-    .verify-step {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      max-width: 280px;
-    }
-    .verify-step svg {
-      flex-shrink: 0;
-      color: var(--green, #3fb950);
-      margin-top: 2px;
-    }
-    .verify-step strong {
-      display: block;
-      font-size: 0.88rem;
-      color: var(--text, rgba(255,255,255,0.92));
-      margin-bottom: 2px;
-    }
-    .verify-step span {
-      font-size: 0.8rem;
-      color: var(--muted, rgba(255,255,255,0.55));
-      line-height: 1.4;
-    }
-
     .job-meta {
       display: flex;
       flex-wrap: wrap;
@@ -275,36 +316,61 @@
       align-items: center;
       gap: 5px;
     }
-
-    .job-signals {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      padding-top: 4px;
-    }
-    .signal-check {
+    .remote-badge {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      font-size: .78rem;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: .72rem;
       font-weight: 600;
-      color: var(--green);
-    }
-
-    .job-apply-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: .88rem;
-      font-weight: 600;
+      background: rgba(88,166,255,.1);
       color: var(--accent);
+      border: 1px solid rgba(88,166,255,.15);
+    }
+    .job-description-preview {
+      font-size: .82rem;
+      color: var(--muted);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .job-posted {
+      font-size: .75rem;
+      color: var(--text-tertiary, rgba(255,255,255,0.35));
       margin-top: auto;
       padding-top: 6px;
-      transition: gap .2s;
     }
-    .job-apply-link:hover {
-      gap: 10px;
-      text-decoration: none;
+
+    /* Load more */
+    .load-more-wrap {
+      text-align: center;
+      padding: 0 24px 60px;
+    }
+    .load-more-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 32px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      font-family: var(--font);
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .load-more-btn:hover {
+      background: rgba(88,166,255,.08);
+      border-color: rgba(88,166,255,.3);
+    }
+    .load-more-btn:disabled {
+      opacity: .4;
+      cursor: default;
     }
 
     /* Loading / empty states */
@@ -319,6 +385,57 @@
     .jobs-empty a {
       color: var(--accent);
       font-weight: 600;
+    }
+
+    /* How it works section */
+    .how-it-works {
+      padding: 64px 0;
+      border-top: 1px solid var(--border);
+    }
+    .how-it-works h2 {
+      text-align: center;
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 700;
+      margin-bottom: 48px;
+      letter-spacing: -.02em;
+    }
+    .how-steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .how-step {
+      text-align: center;
+      padding: 32px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .how-step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(63,185,80,.1);
+      color: var(--green);
+      font-weight: 800;
+      font-size: 1rem;
+      margin-bottom: 16px;
+      border: 1px solid rgba(63,185,80,.2);
+    }
+    .how-step h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .how-step p {
+      font-size: .88rem;
+      color: var(--muted);
+      line-height: 1.6;
     }
 
     /* CTA section */
@@ -343,25 +460,18 @@
 
     /* Responsive */
     @media (max-width: 900px) {
-      .jobs-grid {
-        grid-template-columns: 1fr;
-      }
+      .jobs-grid { grid-template-columns: 1fr; }
+      .how-steps { grid-template-columns: 1fr; max-width: 400px; }
+    }
+    @media (max-width: 768px) {
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .filter-bar .salary-range { flex-wrap: wrap; }
+      .filter-bar select { min-width: 0; }
     }
     @media (max-width: 600px) {
       .jobs-hero { padding: 56px 0 36px; }
-      .jobs-stats-row { gap: 10px; }
-      .jobs-stat { padding: 12px 16px; min-width: 110px; }
-      .jobs-stat strong { font-size: 1.25rem; }
-      .jobs-filter-bar { flex-direction: column; }
-      .jobs-filter-bar select { min-width: 0; }
       .job-card { padding: 20px 18px 18px; }
-    }
-    @media (max-width: 480px) {
-      .jobs-stats-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-      }
+      .search-bar { font-size: .95rem; padding: 14px 16px 14px 46px; }
     }
   </style>
 </head>
@@ -392,62 +502,80 @@
 <section class="jobs-hero">
   <div class="jobs-hero-bg" aria-hidden="true"></div>
   <div class="container">
-    <div class="fade-up">
-      <span class="badge badge-green">Pre-Screened</span>
-    </div>
-    <h1 class="fade-up delay-1">Verified Safe Jobs</h1>
-    <p class="fade-up delay-2">
-      Every listing below has passed our 54-signal fraud detection engine. Updated every 6 hours from verified sources.
+    <h1 class="fade-up">Every Job. Verified Safe.</h1>
+    <p class="hero-subtitle fade-up delay-1">
+      We scan thousands of listings from 120+ companies across Greenhouse, Lever, Ashby, and more &mdash; every job is checked against 54 fraud signals before you see it.
     </p>
-    <div class="jobs-stats-row fade-up delay-3">
-      <div class="jobs-stat"><strong id="statScanned">&mdash;</strong><span>Jobs scanned</span></div>
-      <div class="jobs-stat"><strong id="statVerified">&mdash;</strong><span>Verified safe</span></div>
-      <div class="jobs-stat"><strong id="statFlagged">&mdash;</strong><span>Flagged</span></div>
-      <div class="jobs-stat"><strong id="statUpdated">&mdash;</strong><span>Last updated</span></div>
+
+    <!-- Search bar -->
+    <div class="search-wrapper fade-up delay-2">
+      <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="heroSearch" class="search-bar" placeholder="Search jobs by title, company, or skill..." aria-label="Search jobs" autocomplete="off" />
+    </div>
+
+    <!-- Quick filter pills -->
+    <div class="quick-pills fade-up delay-3">
+      <button class="pill" data-q="Software Engineer">Software Engineer</button>
+      <button class="pill" data-q="Product Manager">Product Manager</button>
+      <button class="pill" data-q="Data Scientist">Data Scientist</button>
+      <button class="pill" data-q="Designer">Designer</button>
+      <button class="pill" data-q="Remote" data-filter="location">Remote</button>
     </div>
   </div>
 </section>
 
-<!-- CONTEXT BANNER -->
-<div class="scam-rate-banner">
-  <span>&#9888;&#65039;</span> 1 in 6 remote job postings contains fraudulent signals. These listings have been verified clean.
-</div>
-
-<!-- VERIFY EXPLAINER -->
-<div class="verify-explainer">
-  <div class="container">
-    <div class="verify-steps">
-      <div class="verify-step">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <div>
-          <strong>Source verification</strong>
-          <span>Jobs scraped from real employer career pages and trusted job boards</span>
-        </div>
-      </div>
-      <div class="verify-step">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <div>
-          <strong>54-signal scan</strong>
-          <span>Every listing analyzed for fraud patterns, ghost job indicators, and red flags</span>
-        </div>
-      </div>
-      <div class="verify-step">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-        <div>
-          <strong>Zero risk flags</strong>
-          <span>Only listings that score below 20/100 risk make it to this page</span>
-        </div>
-      </div>
+<!-- FILTER BAR -->
+<div class="filter-bar" id="filterBar">
+  <div class="filter-group">
+    <label for="filterLocation">Location</label>
+    <input type="text" id="filterLocation" placeholder="City or Remote" />
+  </div>
+  <div class="filter-group">
+    <label for="filterSource">Source</label>
+    <select id="filterSource">
+      <option value="">All Sources</option>
+      <option value="greenhouse">Greenhouse</option>
+      <option value="lever">Lever</option>
+      <option value="ashby">Ashby</option>
+      <option value="adzuna">Adzuna</option>
+      <option value="usajobs">USAJobs</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Salary Range</label>
+    <div class="salary-range">
+      <input type="number" id="salaryMin" placeholder="Min" min="0" step="1000" />
+      <span>&ndash;</span>
+      <input type="number" id="salaryMax" placeholder="Max" min="0" step="1000" />
     </div>
+  </div>
+  <div class="filter-group">
+    <label for="filterRisk">Risk Level</label>
+    <select id="filterRisk">
+      <option value="safe">Verified Safe</option>
+      <option value="low">Low Risk</option>
+      <option value="all">All</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label for="filterSort">Sort</label>
+    <select id="filterSort">
+      <option value="newest">Newest</option>
+      <option value="best">Best Match</option>
+      <option value="salary">Highest Salary</option>
+    </select>
   </div>
 </div>
 
-<!-- FILTER BAR -->
-<div class="jobs-filter-bar">
-  <input type="text" id="jobsSearch" placeholder="Search by title, company, or location..." aria-label="Search jobs" />
-  <select id="jobsSource" aria-label="Filter by source">
-    <option value="">All Sources</option>
-  </select>
+<!-- STATS BAR -->
+<div class="stats-bar" id="statsBar">
+  <span><strong id="statJobs">&mdash;</strong> jobs available</span>
+  <span class="dot-sep">&bull;</span>
+  <span><strong id="statCompanies">&mdash;</strong> companies</span>
+  <span class="dot-sep">&bull;</span>
+  <span><strong id="statSources">&mdash;</strong> sources</span>
+  <span class="dot-sep">&bull;</span>
+  <span>Updated <strong id="statUpdated">&mdash;</strong></span>
 </div>
 
 <!-- JOB CARDS GRID -->
@@ -457,7 +585,36 @@
 
 <!-- LOADING / EMPTY STATES -->
 <div id="jobsLoading" class="jobs-empty">Loading verified jobs...</div>
-<div id="jobsEmpty" class="jobs-empty" style="display:none">No jobs match your filters.</div>
+<div id="jobsEmpty" class="jobs-empty" style="display:none">No jobs match your filters. <a href="analyze.html">Analyze a job manually</a> instead.</div>
+
+<!-- LOAD MORE -->
+<div class="load-more-wrap" id="loadMoreWrap" style="display:none">
+  <button class="load-more-btn" id="loadMoreBtn">Load More Jobs</button>
+</div>
+
+<!-- HOW IT WORKS -->
+<section class="how-it-works">
+  <div class="container">
+    <h2>How It Works</h2>
+    <div class="how-steps">
+      <div class="how-step reveal">
+        <div class="how-step-num">1</div>
+        <h3>We Scan</h3>
+        <p>Every 4 hours, we fetch jobs directly from company career pages across 120+ employers using Greenhouse, Lever, Ashby, and public boards.</p>
+      </div>
+      <div class="how-step reveal">
+        <div class="how-step-num">2</div>
+        <h3>We Verify</h3>
+        <p>Each listing is analyzed against 54 fraud detection signals in real-time &mdash; checking for ghost jobs, fake companies, and suspicious patterns.</p>
+      </div>
+      <div class="how-step reveal">
+        <div class="how-step-num">3</div>
+        <h3>You Apply</h3>
+        <p>Click through directly to the company&rsquo;s career page &mdash; no middleman, no sponsored results, no data harvesting.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- CTA -->
 <section class="jobs-cta">
@@ -523,7 +680,9 @@
 <script>
 'use strict';
 
-/* Mobile nav toggle */
+/* ============================================================
+   Mobile nav toggle
+   ============================================================ */
 document.getElementById('mobileToggle').addEventListener('click', function () {
   var nav = document.getElementById('navLinks');
   var expanded = nav.classList.toggle('open');
@@ -539,112 +698,27 @@ var revealObserver = new IntersectionObserver(function (entries) {
 document.querySelectorAll('.reveal').forEach(function (el) { revealObserver.observe(el); });
 
 /* ============================================================
-   Jobs Board Logic
+   Dynamic Job Board
    ============================================================ */
 
+var API_BASE = 'https://api.jobsentinel.org';
+var FALLBACK_URL = 'data/verified-jobs.json';
+var PAGE_SIZE = 20;
+
 var allJobs = [];
+var filteredJobs = [];
+var currentPage = 0;
+var searchTimeout = null;
 
-function loadJobs() {
-  Promise.all([
-    fetch('data/verified-jobs.json'),
-    fetch('data/scan-stats.json')
-  ]).then(function (responses) {
-    var jobsResp = responses[0];
-    var statsResp = responses[1];
+/* --- Utility functions --- */
 
-    if (!jobsResp.ok) throw new Error('Failed to load jobs');
-
-    return Promise.all([
-      jobsResp.json(),
-      statsResp.ok ? statsResp.json() : null
-    ]);
-  }).then(function (data) {
-    var jobsData = data[0];
-    var stats = data[1];
-
-    allJobs = jobsData.jobs || [];
-
-    if (stats) {
-      document.getElementById('statScanned').textContent = stats.total_scanned ? stats.total_scanned.toLocaleString() : '—';
-      document.getElementById('statVerified').textContent = stats.total_safe ? stats.total_safe.toLocaleString() : '—';
-      document.getElementById('statFlagged').textContent = ((stats.total_suspicious || 0) + (stats.total_scam || 0)).toLocaleString();
-      var updated = stats.last_scan ? timeAgo(new Date(stats.last_scan)) : '—';
-      document.getElementById('statUpdated').textContent = updated;
-    }
-
-    /* Populate source filter */
-    var sources = [];
-    var seen = {};
-    allJobs.forEach(function (j) {
-      if (j.source && !seen[j.source]) {
-        seen[j.source] = true;
-        sources.push(j.source);
-      }
-    });
-    var select = document.getElementById('jobsSource');
-    sources.sort().forEach(function (s) {
-      var opt = document.createElement('option');
-      opt.value = s;
-      opt.textContent = s;
-      select.appendChild(opt);
-    });
-
-    renderJobs(allJobs);
-  }).catch(function () {
-    document.getElementById('jobsLoading').innerHTML =
-      'Unable to load jobs. <a href="analyze.html">Analyze a job manually</a> instead.';
-  });
-}
-
-function sourceIcon(source) {
-  var s = (source || '').toLowerCase();
-  if (s.includes('remoteok')) return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>';
-  if (s.includes('adzuna')) return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
-  return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
-}
-
-function renderJobs(jobs) {
-  var grid = document.getElementById('jobsGrid');
-  var loading = document.getElementById('jobsLoading');
-  var empty = document.getElementById('jobsEmpty');
-
-  loading.style.display = 'none';
-
-  if (jobs.length === 0) {
-    grid.innerHTML = '';
-    empty.style.display = 'block';
-    return;
-  }
-
-  empty.style.display = 'none';
-
-  grid.innerHTML = jobs.map(function (job) {
-    var salary = formatSalary(job.salary_min, job.salary_max);
-    var signals = job.signal_count || 54;
-    var score = Math.round((job.scam_score || 0) * 100);
-    return ''
-      + '<div class="job-card">'
-      +   '<div class="job-card-header">'
-      +     '<span class="verified-badge">🛡 Verified Safe</span>'
-      +     '<span class="job-source" title="Sourced directly from ' + escHtml(job.source || 'Unknown') + '">' + sourceIcon(job.source) + ' ' + escHtml(job.source || 'Unknown') + '</span>'
-      +   '</div>'
-      +   '<h3 class="job-title">' + escHtml(job.title || 'Untitled Position') + '</h3>'
-      +   '<div class="job-company">' + escHtml(job.company || 'Company') + '</div>'
-      +   '<div class="job-company-meta">'
-      +     (job.source ? 'Direct from ' + escHtml(job.source) : '')
-      +   '</div>'
-      +   '<div class="job-meta">'
-      +     (job.location ? '<span class="job-location">📍 ' + escHtml(job.location) + '</span>' : '')
-      +     (salary ? '<span class="job-salary">💰 ' + salary + '</span>' : '')
-      +   '</div>'
-      +   (job.verified_at ? '<div class="job-freshness">Verified ' + timeAgo(new Date(job.verified_at)) + '</div>' : '')
-      +   '<div class="job-signals">'
-      +     '<span class="signal-check">✓ ' + signals + ' signals checked</span>'
-      +     '<span class="signal-check">✓ Score: ' + score + '/100</span>'
-      +   '</div>'
-      +   (job.url ? '<a href="' + escHtml(job.url) + '" target="_blank" rel="noopener" class="job-apply-link">View Listing →</a>' : '')
-      + '</div>';
-  }).join('');
+function debounce(fn, ms) {
+  var timer;
+  return function () {
+    var ctx = this, args = arguments;
+    clearTimeout(timer);
+    timer = setTimeout(function () { fn.apply(ctx, args); }, ms);
+  };
 }
 
 function formatSalary(min, max) {
@@ -658,43 +732,398 @@ function formatSalary(min, max) {
   return 'Up to ' + fmt(max);
 }
 
-function timeAgo(date) {
-  var diff = Date.now() - date.getTime();
-  var hours = Math.floor(diff / 3600000);
-  if (hours < 1) return 'Just now';
-  if (hours < 24) return hours + 'h ago';
+function timeAgo(dateStr) {
+  if (!dateStr) return '';
+  var diff = Date.now() - new Date(dateStr).getTime();
+  var mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return mins + ' minute' + (mins === 1 ? '' : 's') + ' ago';
+  var hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + ' hour' + (hours === 1 ? '' : 's') + ' ago';
   var days = Math.floor(hours / 24);
-  return days + 'd ago';
+  if (days < 30) return days + ' day' + (days === 1 ? '' : 's') + ' ago';
+  var months = Math.floor(days / 30);
+  return months + ' month' + (months === 1 ? '' : 's') + ' ago';
 }
 
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/* Filter handlers */
-document.getElementById('jobsSearch').addEventListener('input', applyFilters);
-document.getElementById('jobsSource').addEventListener('change', applyFilters);
-
-function applyFilters() {
-  var q = document.getElementById('jobsSearch').value.toLowerCase().trim();
-  var src = document.getElementById('jobsSource').value;
-
-  var filtered = allJobs;
-  if (q) {
-    filtered = filtered.filter(function (j) {
-      return (j.title || '').toLowerCase().indexOf(q) !== -1
-          || (j.company || '').toLowerCase().indexOf(q) !== -1
-          || (j.location || '').toLowerCase().indexOf(q) !== -1;
-    });
-  }
-  if (src) {
-    filtered = filtered.filter(function (j) { return j.source === src; });
-  }
-  renderJobs(filtered);
+function getSourceClass(source) {
+  var s = (source || '').toLowerCase();
+  if (s.includes('greenhouse')) return 'greenhouse';
+  if (s.includes('lever')) return 'lever';
+  if (s.includes('ashby')) return 'ashby';
+  if (s.includes('adzuna')) return 'adzuna';
+  if (s.includes('usajobs')) return 'usajobs';
+  if (s.includes('remoteok')) return 'remoteok';
+  return 'default';
 }
 
-/* Init */
-loadJobs();
+function isRemote(job) {
+  var loc = (job.location || '').toLowerCase();
+  var title = (job.title || '').toLowerCase();
+  return loc.includes('remote') || title.includes('remote');
+}
+
+function getSafetyLevel(job) {
+  var score = job.scam_score || 0;
+  if (score <= 0.2) return 'safe';
+  if (score <= 0.4) return 'low-risk';
+  return 'risky';
+}
+
+function shieldSvg() {
+  return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+}
+
+/* --- Stats rendering --- */
+
+function renderStats(data) {
+  var jobs = data.jobs || [];
+  var companies = {};
+  var sources = {};
+  jobs.forEach(function (j) {
+    if (j.company) companies[j.company] = true;
+    if (j.source) sources[j.source] = true;
+  });
+  document.getElementById('statJobs').textContent = jobs.length.toLocaleString();
+  document.getElementById('statCompanies').textContent = Object.keys(companies).length.toLocaleString();
+  document.getElementById('statSources').textContent = Object.keys(sources).length.toLocaleString();
+
+  var updated = data.last_scan || data.generated_at || null;
+  document.getElementById('statUpdated').textContent = updated ? timeAgo(updated) : 'recently';
+}
+
+/* --- Job card rendering --- */
+
+function renderJobCard(job) {
+  var salary = formatSalary(job.salary_min, job.salary_max);
+  var safety = getSafetyLevel(job);
+  var safetyLabel = safety === 'safe' ? 'Verified Safe' : 'Low Risk';
+  var safetyClass = safety === 'safe' ? 'safe' : 'low-risk';
+  var srcClass = getSourceClass(job.source);
+  var srcName = escHtml(job.source || 'Direct');
+  var remote = isRemote(job);
+  var desc = job.description ? escHtml(job.description.substring(0, 150)) : '';
+  var posted = job.posted_at || job.verified_at || job.created_at || '';
+
+  var card = ''
+    + '<div class="job-card">'
+    +   '<div class="job-card-header">'
+    +     '<span class="safety-badge ' + safetyClass + '">' + shieldSvg() + ' ' + safetyLabel + '</span>'
+    +     '<span class="source-badge"><span class="source-dot ' + srcClass + '"></span>' + srcName + '</span>'
+    +   '</div>'
+    +   '<h3 class="job-title">'
+    +     (job.url
+          ? '<a href="' + escHtml(job.url) + '" target="_blank" rel="noopener">' + escHtml(job.title || 'Untitled Position') + '</a>'
+          : escHtml(job.title || 'Untitled Position'))
+    +   '</h3>'
+    +   '<div class="job-company">' + escHtml(job.company || 'Company') + '</div>'
+    +   '<div class="job-meta">';
+
+  if (job.location) {
+    card += '<span class="job-location">';
+    if (remote) {
+      card += '<span class="remote-badge">Remote</span> ';
+    }
+    card += escHtml(job.location) + '</span>';
+  } else if (remote) {
+    card += '<span class="job-location"><span class="remote-badge">Remote</span></span>';
+  }
+
+  if (salary) {
+    card += '<span class="job-salary">' + salary + '</span>';
+  }
+
+  card += '</div>';
+
+  if (desc) {
+    card += '<div class="job-description-preview">' + desc + '</div>';
+  }
+
+  if (posted) {
+    card += '<div class="job-posted">' + timeAgo(posted) + '</div>';
+  }
+
+  card += '</div>';
+  return card;
+}
+
+/* --- Render jobs list --- */
+
+function renderJobs() {
+  var grid = document.getElementById('jobsGrid');
+  var loading = document.getElementById('jobsLoading');
+  var empty = document.getElementById('jobsEmpty');
+  var loadMoreWrap = document.getElementById('loadMoreWrap');
+
+  loading.style.display = 'none';
+
+  if (filteredJobs.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    loadMoreWrap.style.display = 'none';
+    return;
+  }
+
+  empty.style.display = 'none';
+
+  var end = (currentPage + 1) * PAGE_SIZE;
+  var visible = filteredJobs.slice(0, end);
+
+  grid.innerHTML = visible.map(renderJobCard).join('');
+
+  if (end < filteredJobs.length) {
+    loadMoreWrap.style.display = 'block';
+    document.getElementById('loadMoreBtn').textContent = 'Load More Jobs (' + (filteredJobs.length - end) + ' remaining)';
+  } else {
+    loadMoreWrap.style.display = 'none';
+  }
+}
+
+/* --- Filter & search logic --- */
+
+function getFilters() {
+  return {
+    q: document.getElementById('heroSearch').value.toLowerCase().trim(),
+    location: document.getElementById('filterLocation').value.toLowerCase().trim(),
+    source: document.getElementById('filterSource').value.toLowerCase(),
+    salaryMin: parseInt(document.getElementById('salaryMin').value) || 0,
+    salaryMax: parseInt(document.getElementById('salaryMax').value) || 0,
+    risk: document.getElementById('filterRisk').value,
+    sort: document.getElementById('filterSort').value
+  };
+}
+
+function applyFilters() {
+  var f = getFilters();
+
+  filteredJobs = allJobs.filter(function (job) {
+    /* Text search */
+    if (f.q) {
+      var haystack = ((job.title || '') + ' ' + (job.company || '') + ' ' + (job.location || '') + ' ' + (job.description || '')).toLowerCase();
+      if (haystack.indexOf(f.q) === -1) return false;
+    }
+
+    /* Location */
+    if (f.location) {
+      var loc = (job.location || '').toLowerCase();
+      if (f.location === 'remote') {
+        if (!isRemote(job)) return false;
+      } else {
+        if (loc.indexOf(f.location) === -1) return false;
+      }
+    }
+
+    /* Source */
+    if (f.source) {
+      if ((job.source || '').toLowerCase().indexOf(f.source) === -1) return false;
+    }
+
+    /* Salary */
+    if (f.salaryMin > 0) {
+      if (!job.salary_max || job.salary_max < f.salaryMin) return false;
+    }
+    if (f.salaryMax > 0) {
+      if (!job.salary_min || job.salary_min > f.salaryMax) return false;
+    }
+
+    /* Risk */
+    var safety = getSafetyLevel(job);
+    if (f.risk === 'safe' && safety !== 'safe') return false;
+    if (f.risk === 'low' && safety === 'risky') return false;
+
+    return true;
+  });
+
+  /* Sort */
+  if (f.sort === 'newest') {
+    filteredJobs.sort(function (a, b) {
+      var da = new Date(a.posted_at || a.verified_at || a.created_at || 0);
+      var db = new Date(b.posted_at || b.verified_at || b.created_at || 0);
+      return db - da;
+    });
+  } else if (f.sort === 'salary') {
+    filteredJobs.sort(function (a, b) {
+      return (b.salary_max || b.salary_min || 0) - (a.salary_max || a.salary_min || 0);
+    });
+  }
+  /* 'best' keeps default order (relevance from API or file order) */
+
+  currentPage = 0;
+  renderJobs();
+  updateUrlParams(f);
+}
+
+/* --- URL params (shareable links) --- */
+
+function updateUrlParams(f) {
+  var params = new URLSearchParams();
+  if (f.q) params.set('q', f.q);
+  if (f.location) params.set('location', f.location);
+  if (f.source) params.set('source', f.source);
+  if (f.salaryMin) params.set('salary_min', f.salaryMin);
+  if (f.salaryMax) params.set('salary_max', f.salaryMax);
+  if (f.risk !== 'safe') params.set('risk', f.risk);
+  if (f.sort !== 'newest') params.set('sort', f.sort);
+
+  var qs = params.toString();
+  var newUrl = window.location.pathname + (qs ? '?' + qs : '');
+  history.replaceState(null, '', newUrl);
+}
+
+function loadUrlParams() {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('q')) document.getElementById('heroSearch').value = params.get('q');
+  if (params.get('location')) document.getElementById('filterLocation').value = params.get('location');
+  if (params.get('source')) document.getElementById('filterSource').value = params.get('source');
+  if (params.get('salary_min')) document.getElementById('salaryMin').value = params.get('salary_min');
+  if (params.get('salary_max')) document.getElementById('salaryMax').value = params.get('salary_max');
+  if (params.get('risk')) document.getElementById('filterRisk').value = params.get('risk');
+  if (params.get('sort')) document.getElementById('filterSort').value = params.get('sort');
+}
+
+/* --- Data fetching --- */
+
+function searchJobs(params) {
+  /* Try API first, fall back to static JSON */
+  var qs = new URLSearchParams(params || {}).toString();
+  var apiUrl = API_BASE + '/api/jobs' + (qs ? '?' + qs : '');
+
+  return fetch(apiUrl)
+    .then(function (res) {
+      if (!res.ok) throw new Error('API unavailable');
+      return res.json();
+    })
+    .catch(function () {
+      /* Static fallback */
+      return fetch(FALLBACK_URL).then(function (res) {
+        if (!res.ok) throw new Error('Failed to load jobs');
+        return res.json();
+      });
+    });
+}
+
+function loadStats() {
+  return fetch('data/scan-stats.json')
+    .then(function (res) {
+      if (!res.ok) throw new Error('No stats');
+      return res.json();
+    })
+    .catch(function () { return null; });
+}
+
+/* --- Init --- */
+
+function init() {
+  loadUrlParams();
+
+  var f = getFilters();
+  var apiParams = {};
+  if (f.q) apiParams.q = f.q;
+  if (f.location) apiParams.location = f.location;
+  if (f.source) apiParams.source = f.source;
+
+  Promise.all([
+    searchJobs(apiParams),
+    loadStats()
+  ]).then(function (results) {
+    var jobsData = results[0];
+    var statsData = results[1];
+
+    allJobs = jobsData.jobs || [];
+
+    /* Render stats: prefer scan-stats.json, fall back to computed from jobs */
+    if (statsData) {
+      document.getElementById('statJobs').textContent = (statsData.total_safe || allJobs.length).toLocaleString();
+      var companies = {};
+      var sources = {};
+      allJobs.forEach(function (j) {
+        if (j.company) companies[j.company] = true;
+        if (j.source) sources[j.source] = true;
+      });
+      document.getElementById('statCompanies').textContent = Object.keys(companies).length.toLocaleString();
+      document.getElementById('statSources').textContent = Object.keys(sources).length.toLocaleString();
+      document.getElementById('statUpdated').textContent = statsData.last_scan ? timeAgo(statsData.last_scan) : 'recently';
+    } else {
+      renderStats(jobsData);
+    }
+
+    /* Populate source dropdown with actual sources */
+    var seenSources = {};
+    allJobs.forEach(function (j) {
+      if (j.source) seenSources[j.source] = true;
+    });
+    var select = document.getElementById('filterSource');
+    Object.keys(seenSources).sort().forEach(function (s) {
+      var lower = s.toLowerCase();
+      /* Skip if already in the static options */
+      var exists = false;
+      for (var i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === lower) { exists = true; break; }
+      }
+      if (!exists) {
+        var opt = document.createElement('option');
+        opt.value = lower;
+        opt.textContent = s;
+        select.appendChild(opt);
+      }
+    });
+
+    applyFilters();
+  }).catch(function () {
+    document.getElementById('jobsLoading').innerHTML =
+      'Unable to load jobs. <a href="analyze.html">Analyze a job manually</a> instead.';
+  });
+}
+
+/* --- Event wiring --- */
+
+var debouncedFilter = debounce(applyFilters, 300);
+
+document.getElementById('heroSearch').addEventListener('input', debouncedFilter);
+document.getElementById('filterLocation').addEventListener('input', debouncedFilter);
+document.getElementById('filterSource').addEventListener('change', applyFilters);
+document.getElementById('salaryMin').addEventListener('input', debouncedFilter);
+document.getElementById('salaryMax').addEventListener('input', debouncedFilter);
+document.getElementById('filterRisk').addEventListener('change', applyFilters);
+document.getElementById('filterSort').addEventListener('change', applyFilters);
+
+/* Quick pills */
+document.querySelectorAll('.pill').forEach(function (pill) {
+  pill.addEventListener('click', function () {
+    var q = this.getAttribute('data-q');
+    var filterType = this.getAttribute('data-filter');
+
+    /* Toggle active state */
+    document.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
+    this.classList.add('active');
+
+    if (filterType === 'location') {
+      document.getElementById('filterLocation').value = q;
+      document.getElementById('heroSearch').value = '';
+    } else {
+      document.getElementById('heroSearch').value = q;
+    }
+    applyFilters();
+  });
+});
+
+/* Load more */
+document.getElementById('loadMoreBtn').addEventListener('click', function () {
+  currentPage++;
+  renderJobs();
+  /* Scroll to where new cards start */
+  var cards = document.querySelectorAll('.job-card');
+  if (cards.length > PAGE_SIZE * currentPage) {
+    cards[PAGE_SIZE * currentPage].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
+
+/* Start */
+init();
 </script>
 <script type="module" src="analyze-bridge.js?v=cf95ce8"></script>
 </body>

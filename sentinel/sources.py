@@ -6,6 +6,7 @@ All network errors are swallowed and logged -- callers always get a list.
 """
 
 import contextlib
+import datetime
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -503,6 +504,389 @@ class RemotiveSource(JobSource):
         return jobs
 
 
+
+# ---------------------------------------------------------------------------
+# Greenhouse
+# ---------------------------------------------------------------------------
+
+class GreenhouseSource(JobSource):
+    """Adapter for Greenhouse job board API (no auth required).
+
+    Iterates over a list of company board tokens (e.g. "stripe", "figma")
+    and fetches public job postings from each.
+    """
+
+    def __init__(self, companies: list[str] | None = None):
+        self._companies = companies or []
+
+    @property
+    def name(self) -> str:
+        return "greenhouse"
+
+    def fetch(self, query: str = "", location: str = "", limit: int = 25) -> list[JobPosting]:
+        if not self._companies:
+            return []
+
+        throttler = get_throttler()
+        query_lower = query.lower()
+        location_lower = location.lower()
+        jobs: list[JobPosting] = []
+
+        for board_token in self._companies:
+            url = f"https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true"
+            if not throttler.wait_if_needed(url):
+                logger.warning("Circuit broken for %s, skipping", url)
+                continue
+
+            resp = None
+            try:
+                with httpx.Client(timeout=_TIMEOUT) as client:
+                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp.raise_for_status()
+                    data = resp.json()
+                throttler.record_success(url)
+            except Exception:
+                logger.exception("Greenhouse fetch failed for board %s", board_token)
+                throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
+                continue
+
+            for item in data.get("jobs", []):
+                if not isinstance(item, dict):
+                    continue
+
+                try:
+                    title = str(item.get("title", ""))
+                    loc_obj = item.get("location", {})
+                    loc = str(loc_obj.get("name", "")) if isinstance(loc_obj, dict) else ""
+                    description_html = str(item.get("content", ""))
+                    description = _strip_html(description_html)
+                    posting_url = str(item.get("absolute_url", ""))
+                    posted_date = str(item.get("updated_at", ""))
+
+                    # Local query filtering
+                    if query_lower:
+                        searchable = f"{title} {loc} {description} {board_token}".lower()
+                        if query_lower not in searchable:
+                            continue
+
+                    # Local location filtering
+                    if location_lower and location_lower not in loc.lower():
+                        continue
+
+                    job = JobPosting(
+                        url=posting_url,
+                        title=title,
+                        company=board_token,
+                        location=loc,
+                        description=description,
+                        posted_date=posted_date,
+                        source=self.name,
+                    )
+                    jobs.append(job)
+                except Exception:
+                    logger.exception("Greenhouse: failed to parse item for board %s", board_token)
+                    continue
+
+                if len(jobs) >= limit:
+                    return jobs
+
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# Lever
+# ---------------------------------------------------------------------------
+
+class LeverSource(JobSource):
+    """Adapter for Lever public postings API (no auth required).
+
+    Iterates over a list of company slugs (e.g. "cloudflare", "twitch")
+    and fetches public job postings from each.
+    """
+
+    def __init__(self, companies: list[str] | None = None):
+        self._companies = companies or []
+
+    @property
+    def name(self) -> str:
+        return "lever"
+
+    def fetch(self, query: str = "", location: str = "", limit: int = 25) -> list[JobPosting]:
+        if not self._companies:
+            return []
+
+        throttler = get_throttler()
+        query_lower = query.lower()
+        location_lower = location.lower()
+        jobs: list[JobPosting] = []
+
+        for company_slug in self._companies:
+            url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
+            if not throttler.wait_if_needed(url):
+                logger.warning("Circuit broken for %s, skipping", url)
+                continue
+
+            resp = None
+            try:
+                with httpx.Client(timeout=_TIMEOUT) as client:
+                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp.raise_for_status()
+                    data = resp.json()
+                throttler.record_success(url)
+            except Exception:
+                logger.exception("Lever fetch failed for company %s", company_slug)
+                throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
+                continue
+
+            if not isinstance(data, list):
+                continue
+
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+
+                try:
+                    title = str(item.get("text", ""))
+                    categories = item.get("categories", {})
+                    loc = ""
+                    team = ""
+                    if isinstance(categories, dict):
+                        loc = str(categories.get("location", "") or "")
+                        team = str(categories.get("team", "") or "")
+                    description_html = str(item.get("description", ""))
+                    description = _strip_html(description_html)
+                    posting_url = str(item.get("hostedUrl", ""))
+
+                    # Convert ms timestamp to ISO date string
+                    posted_date = ""
+                    created_at = item.get("createdAt")
+                    if created_at is not None:
+                        with contextlib.suppress(Exception):
+                            posted_date = datetime.datetime.fromtimestamp(
+                                int(created_at) / 1000, tz=datetime.timezone.utc
+                            ).isoformat()
+
+                    # Local query filtering
+                    if query_lower:
+                        searchable = f"{title} {loc} {team} {description} {company_slug}".lower()
+                        if query_lower not in searchable:
+                            continue
+
+                    # Local location filtering
+                    if location_lower and location_lower not in loc.lower():
+                        continue
+
+                    job = JobPosting(
+                        url=posting_url,
+                        title=title,
+                        company=company_slug,
+                        location=loc,
+                        description=description,
+                        posted_date=posted_date,
+                        source=self.name,
+                    )
+                    jobs.append(job)
+                except Exception:
+                    logger.exception("Lever: failed to parse item for company %s", company_slug)
+                    continue
+
+                if len(jobs) >= limit:
+                    return jobs
+
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# Ashby
+# ---------------------------------------------------------------------------
+
+class AshbySource(JobSource):
+    """Adapter for Ashby public job board API (no auth required).
+
+    Iterates over a list of board tokens and fetches public job postings
+    from each.
+    """
+
+    def __init__(self, companies: list[str] | None = None):
+        self._companies = companies or []
+
+    @property
+    def name(self) -> str:
+        return "ashby"
+
+    def fetch(self, query: str = "", location: str = "", limit: int = 25) -> list[JobPosting]:
+        if not self._companies:
+            return []
+
+        throttler = get_throttler()
+        query_lower = query.lower()
+        location_lower = location.lower()
+        jobs: list[JobPosting] = []
+
+        for board_token in self._companies:
+            url = f"https://api.ashbyhq.com/posting-api/job-board/{board_token}"
+            if not throttler.wait_if_needed(url):
+                logger.warning("Circuit broken for %s, skipping", url)
+                continue
+
+            resp = None
+            try:
+                with httpx.Client(timeout=_TIMEOUT) as client:
+                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp.raise_for_status()
+                    data = resp.json()
+                throttler.record_success(url)
+            except Exception:
+                logger.exception("Ashby fetch failed for board %s", board_token)
+                throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
+                continue
+
+            for item in data.get("jobs", []):
+                if not isinstance(item, dict):
+                    continue
+
+                try:
+                    title = str(item.get("title", ""))
+                    loc = str(item.get("location", ""))
+                    description_html = str(item.get("descriptionHtml", ""))
+                    description = _strip_html(description_html)
+                    posting_url = str(item.get("jobUrl", ""))
+                    posted_date = str(item.get("publishedAt", ""))
+                    emp_type = str(item.get("employmentType", ""))
+
+                    # Local query filtering
+                    if query_lower:
+                        searchable = f"{title} {loc} {description} {board_token}".lower()
+                        if query_lower not in searchable:
+                            continue
+
+                    # Local location filtering
+                    if location_lower and location_lower not in loc.lower():
+                        continue
+
+                    job = JobPosting(
+                        url=posting_url,
+                        title=title,
+                        company=board_token,
+                        location=loc,
+                        description=description,
+                        posted_date=posted_date,
+                        employment_type=emp_type,
+                        source=self.name,
+                    )
+                    jobs.append(job)
+                except Exception:
+                    logger.exception("Ashby: failed to parse item for board %s", board_token)
+                    continue
+
+                if len(jobs) >= limit:
+                    return jobs
+
+        return jobs
+
+
+# ---------------------------------------------------------------------------
+# SmartRecruiters
+# ---------------------------------------------------------------------------
+
+class SmartRecruitersSource(JobSource):
+    """Adapter for SmartRecruiters public postings API (no auth required).
+
+    Iterates over a list of company IDs and fetches public job postings
+    from each.
+    """
+
+    def __init__(self, companies: list[str] | None = None):
+        self._companies = companies or []
+
+    @property
+    def name(self) -> str:
+        return "smartrecruiters"
+
+    def fetch(self, query: str = "", location: str = "", limit: int = 25) -> list[JobPosting]:
+        if not self._companies:
+            return []
+
+        throttler = get_throttler()
+        query_lower = query.lower()
+        location_lower = location.lower()
+        jobs: list[JobPosting] = []
+
+        for company_id in self._companies:
+            url = f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings"
+            if not throttler.wait_if_needed(url):
+                logger.warning("Circuit broken for %s, skipping", url)
+                continue
+
+            resp = None
+            try:
+                with httpx.Client(timeout=_TIMEOUT) as client:
+                    resp = client.get(url, headers={"User-Agent": _USER_AGENT})
+                    resp.raise_for_status()
+                    data = resp.json()
+                throttler.record_success(url)
+            except Exception:
+                logger.exception("SmartRecruiters fetch failed for company %s", company_id)
+                throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
+                continue
+
+            for item in data.get("content", []):
+                if not isinstance(item, dict):
+                    continue
+
+                try:
+                    title = str(item.get("name", ""))
+
+                    # Build location from city + country
+                    loc_obj = item.get("location", {})
+                    loc = ""
+                    if isinstance(loc_obj, dict):
+                        city = str(loc_obj.get("city", "") or "")
+                        country = str(loc_obj.get("country", "") or "")
+                        loc_parts = [p for p in (city, country) if p]
+                        loc = ", ".join(loc_parts)
+
+                    # Company name from nested object
+                    company_obj = item.get("company", {})
+                    company_name = ""
+                    if isinstance(company_obj, dict):
+                        company_name = str(company_obj.get("name", "") or "")
+                    if not company_name:
+                        company_name = company_id
+
+                    posting_url = str(item.get("ref", ""))
+                    posted_date = str(item.get("releasedDate", ""))
+
+                    # Local query filtering
+                    if query_lower:
+                        searchable = f"{title} {loc} {company_name} {company_id}".lower()
+                        if query_lower not in searchable:
+                            continue
+
+                    # Local location filtering
+                    if location_lower and location_lower not in loc.lower():
+                        continue
+
+                    job = JobPosting(
+                        url=posting_url,
+                        title=title,
+                        company=company_name,
+                        location=loc,
+                        description="",
+                        posted_date=posted_date,
+                        source=self.name,
+                    )
+                    jobs.append(job)
+                except Exception:
+                    logger.exception("SmartRecruiters: failed to parse item for company %s", company_id)
+                    continue
+
+                if len(jobs) >= limit:
+                    return jobs
+
+        return jobs
+
+
 # ---------------------------------------------------------------------------
 # Registry helpers
 # ---------------------------------------------------------------------------
@@ -515,6 +899,12 @@ def get_all_sources() -> list[JobSource]:
     sources.append(RemoteOKSource())
     sources.append(TheMuseSource())
     sources.append(RemotiveSource())
+
+    # ATS board adapters (empty company lists by default; actual lists loaded from registry)
+    sources.append(GreenhouseSource())
+    sources.append(LeverSource())
+    sources.append(AshbySource())
+    sources.append(SmartRecruitersSource())
 
     # Auth-required sources -- only include if credentials are present
     adzuna = AdzunaSource()
