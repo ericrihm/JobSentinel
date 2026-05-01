@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sentinel.db import SentinelDB
-from sentinel.models import ScamPattern, UserReport, ValidationResult
+from sentinel.models import UserReport, ValidationResult
 
 logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +80,6 @@ class SignalWeightTracker:
 
         Uses only the `math` module — no numpy/scipy required.
         """
-        import random
 
         # Gamma-based sampler: X = Gamma(alpha) / (Gamma(alpha) + Gamma(beta))
         # We use Marsaglia & Tsang's method for Gamma > 1, and the scale transform

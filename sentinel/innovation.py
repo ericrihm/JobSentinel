@@ -13,20 +13,18 @@ Uses Thompson Sampling to decide which improvement avenue to explore.
 """
 import json
 import logging
-import math
 import random
 import re
-import time
 import uuid
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
-from dataclasses import dataclass, field
-
-logger = logging.getLogger(__name__)
 
 from sentinel.db import SentinelDB
+from sentinel.ecosystem import publish_flywheel_state, publish_observation
 from sentinel.flywheel import DetectionFlywheel
-from sentinel.ecosystem import publish_observation, publish_flywheel_state
+
+logger = logging.getLogger(__name__)
 
 # Common English stopwords for text mining
 _STOPWORDS = frozenset({
@@ -200,7 +198,11 @@ class InnovationEngine:
             job = self.db.get_job(url)
             if job and job.get("signals_json"):
                 try:
-                    signals = json.loads(job["signals_json"]) if isinstance(job["signals_json"], str) else job["signals_json"]
+                    signals = (
+                        json.loads(job["signals_json"])
+                        if isinstance(job["signals_json"], str)
+                        else job["signals_json"]
+                    )
                     for s in signals:
                         name = s.get("name", "")
                         if name:
@@ -370,7 +372,6 @@ class InnovationEngine:
             )
 
         # Gather signals for each scam-confirmed report's associated job
-        scam_reports = [r for r in reports if r.get("is_scam")]
         all_reports = reports
 
         # Build signal sets per job for scam reports
@@ -440,10 +441,7 @@ class InnovationEngine:
             p_scam_both = cooccur_count / total_reports
 
             denominator = p_scam_a * p_scam_b
-            if denominator > 0:
-                lift = p_scam_both / denominator
-            else:
-                lift = float("inf")
+            lift = p_scam_both / denominator if denominator > 0 else float("inf")
 
             meaningful_pairs.append(((sig_a, sig_b), cooccur_count, lift))
 

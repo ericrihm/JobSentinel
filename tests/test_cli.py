@@ -1,6 +1,7 @@
 """Comprehensive tests for sentinel.cli — Click CLI commands."""
 
 import json
+import unittest.mock
 
 import pytest
 from click.testing import CliRunner
@@ -491,3 +492,217 @@ class TestGlobalOptions:
         """evolve --help should show evolve usage."""
         result = runner.invoke(main, ["evolve", "--help"])
         assert result.exit_code == 0
+
+
+# ===========================================================================
+# ingest / ingest-history / auto commands
+# ===========================================================================
+
+
+def _make_ingest_run(query="software engineer", location="", jobs_fetched=5, jobs_new=3, high_risk_count=1):
+    """Helper: build a real IngestionRun for mocking."""
+    from sentinel.ingest import IngestionRun
+    return IngestionRun(
+        run_id="test-run-id",
+        started_at="2026-04-30T00:00:00+00:00",
+        completed_at="2026-04-30T00:00:01+00:00",
+        sources_queried=["linkedin"],
+        query=query,
+        location=location,
+        jobs_fetched=jobs_fetched,
+        jobs_new=jobs_new,
+        jobs_scored=jobs_new,
+        high_risk_count=high_risk_count,
+        errors=[],
+    )
+
+
+class TestIngestCli:
+    """Tests for sentinel ingest, ingest-history, and auto commands."""
+
+    def test_ingest_basic(self, runner, monkeypatch):
+        """Basic ingest invocation mocks IngestionPipeline and shows a summary table."""
+        mock_run = _make_ingest_run()
+
+        with unittest.mock.patch("sentinel.ingest.IngestionPipeline") as MockPipeline:
+            instance = MockPipeline.return_value
+            instance.run.return_value = mock_run
+
+            result = runner.invoke(main, ["ingest", "-q", "software engineer"])
+
+        assert result.exit_code == 0, result.output
+        output_lower = result.output.lower()
+        # Should show summary section
+        assert "ingestion" in output_lower or "summary" in output_lower or "fetched" in output_lower
+
+    def test_ingest_multiple_queries(self, runner):
+        """Multiple -q flags each trigger a pipeline.run() call."""
+        run1 = _make_ingest_run(query="data analyst", jobs_fetched=4, jobs_new=2, high_risk_count=0)
+        run2 = _make_ingest_run(query="product manager", jobs_fetched=7, jobs_new=5, high_risk_count=2)
+
+        with unittest.mock.patch("sentinel.ingest.IngestionPipeline") as MockPipeline:
+            instance = MockPipeline.return_value
+            instance.run.side_effect = [run1, run2]
+
+            result = runner.invoke(main, ["ingest", "-q", "data analyst", "-q", "product manager"])
+
+        assert result.exit_code == 0, result.output
+        assert instance.run.call_count == 2
+        # Both queries should appear in output
+        assert "data analyst" in result.output
+        assert "product manager" in result.output
+
+    def test_ingest_json_output(self, runner):
+        """--json-output mode returns a JSON list of IngestionRun dicts."""
+        mock_run = _make_ingest_run(query="remote work")
+
+        with unittest.mock.patch("sentinel.ingest.IngestionPipeline") as MockPipeline:
+            instance = MockPipeline.return_value
+            instance.run.return_value = mock_run
+
+            result = runner.invoke(
+                main, ["--json-output", "ingest", "-q", "remote work"]
+            )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+        assert len(data) == 1
+        run_dict = data[0]
+        assert "jobs_fetched" in run_dict
+        assert "jobs_new" in run_dict
+        assert "high_risk_count" in run_dict
+        assert run_dict["query"] == "remote work"
+
+    def test_ingest_history(self, runner, monkeypatch):
+        """ingest-history shows DB history table with columns."""
+        history_rows = [
+            {
+                "run_id": "abc-1",
+                "started_at": "2026-04-30T00:00:00+00:00",
+                "completed_at": "2026-04-30T00:00:05+00:00",
+                "query": "software engineer",
+                "location": "",
+                "jobs_fetched": 10,
+                "jobs_new": 6,
+                "jobs_scored": 6,
+                "high_risk_count": 2,
+                "errors": [],
+            },
+            {
+                "run_id": "abc-2",
+                "started_at": "2026-04-29T12:00:00+00:00",
+                "completed_at": "2026-04-29T12:00:08+00:00",
+                "query": "data analyst",
+                "location": "remote",
+                "jobs_fetched": 5,
+                "jobs_new": 3,
+                "jobs_scored": 3,
+                "high_risk_count": 0,
+                "errors": [],
+            },
+        ]
+
+        with unittest.mock.patch("sentinel.db.SentinelDB") as MockDB:
+            instance = MockDB.return_value
+            instance.get_ingestion_history.return_value = history_rows
+
+            result = runner.invoke(main, ["ingest-history"])
+
+        assert result.exit_code == 0, result.output
+        output_lower = result.output.lower()
+        # Should show table headers and query names
+        assert "history" in output_lower or "ingestion" in output_lower
+        assert "software engineer" in result.output
+        assert "data analyst" in result.output
+
+    def test_ingest_history_json(self, runner):
+        """ingest-history --json-output returns runs list."""
+        history_rows = [
+            {
+                "run_id": "abc-1",
+                "started_at": "2026-04-30T00:00:00+00:00",
+                "query": "software engineer",
+                "jobs_fetched": 10,
+                "jobs_new": 6,
+                "jobs_scored": 6,
+                "high_risk_count": 2,
+                "errors": [],
+            }
+        ]
+
+        with unittest.mock.patch("sentinel.db.SentinelDB") as MockDB:
+            instance = MockDB.return_value
+            instance.get_ingestion_history.return_value = history_rows
+
+            result = runner.invoke(main, ["--json-output", "ingest-history"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert "runs" in data
+        assert data["count"] == 1
+        assert data["runs"][0]["query"] == "software engineer"
+
+    def test_auto_command(self, runner):
+        """auto command mocks pipeline.auto_ingest and prints summary; flywheel line shown."""
+        runs = [
+            _make_ingest_run(query="software engineer", jobs_fetched=8, jobs_new=5, high_risk_count=1),
+            _make_ingest_run(query="data analyst", jobs_fetched=6, jobs_new=4, high_risk_count=0),
+        ]
+
+        with unittest.mock.patch("sentinel.ingest.IngestionPipeline") as MockPipeline:
+            instance = MockPipeline.return_value
+            instance.auto_ingest.return_value = runs
+
+            result = runner.invoke(
+                main,
+                ["auto", "-q", "software engineer", "-q", "data analyst", "--flywheel"],
+            )
+
+        assert result.exit_code == 0, result.output
+        output_lower = result.output.lower()
+        # Summary totals
+        assert "auto" in output_lower or "cycle" in output_lower
+        # Flywheel line
+        assert "flywheel" in output_lower
+        # auto_ingest was called once with both queries
+        instance.auto_ingest.assert_called_once()
+        call_kwargs = instance.auto_ingest.call_args
+        called_queries = call_kwargs[1].get("queries") or call_kwargs[0][0]
+        assert "software engineer" in called_queries
+        assert "data analyst" in called_queries
+
+    def test_auto_no_flywheel(self, runner):
+        """--no-flywheel passes run_flywheel=False to auto_ingest."""
+        runs = [_make_ingest_run()]
+
+        with unittest.mock.patch("sentinel.ingest.IngestionPipeline") as MockPipeline:
+            instance = MockPipeline.return_value
+            instance.auto_ingest.return_value = runs
+
+            result = runner.invoke(main, ["auto", "-q", "remote jobs", "--no-flywheel"])
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = instance.auto_ingest.call_args
+        run_flywheel_val = call_kwargs[1].get("run_flywheel")
+        assert run_flywheel_val is False
+
+    def test_ingest_sources_parsed(self, runner):
+        """--sources flag parses comma-separated list and passes it to pipeline.run."""
+        mock_run = _make_ingest_run()
+
+        with unittest.mock.patch("sentinel.ingest.IngestionPipeline") as MockPipeline:
+            instance = MockPipeline.return_value
+            instance.run.return_value = mock_run
+
+            result = runner.invoke(
+                main,
+                ["ingest", "-q", "engineer", "--sources", "linkedin,indeed"],
+            )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = instance.run.call_args
+        sources_passed = call_kwargs[1].get("sources") or (
+            call_kwargs[0][2] if len(call_kwargs[0]) > 2 else None
+        )
+        assert sources_passed == ["linkedin", "indeed"]

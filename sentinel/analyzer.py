@@ -2,12 +2,11 @@
 
 import logging
 import time
-from typing import Optional
 
-from sentinel.models import JobPosting, ScamSignal, SignalCategory, ValidationResult, RiskLevel
-from sentinel.signals import extract_signals
-from sentinel.scorer import build_result
 from sentinel.config import get_config
+from sentinel.models import JobPosting, RiskLevel, ScamSignal, ValidationResult
+from sentinel.scorer import build_result
+from sentinel.signals import extract_signals
 
 logger = logging.getLogger(__name__)
 

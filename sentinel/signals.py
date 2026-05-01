@@ -1,10 +1,9 @@
 """Signal extraction: 40+ scam indicators for LinkedIn job postings."""
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sentinel.models import JobPosting, ScamSignal, SignalCategory
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,8 +102,8 @@ def _days_since_posted(posted_date: str) -> int | None:
         return None
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
         try:
-            dt = datetime.strptime(posted_date, fmt).replace(tzinfo=timezone.utc)
-            return (datetime.now(timezone.utc) - dt).days
+            dt = datetime.strptime(posted_date, fmt).replace(tzinfo=UTC)
+            return (datetime.now(UTC) - dt).days
         except ValueError:
             continue
     return None

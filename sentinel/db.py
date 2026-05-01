@@ -1,9 +1,10 @@
 """SQLite persistence layer for Sentinel — WAL mode + FTS5 full-text search."""
 
+import contextlib
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 DEFAULT_DB_PATH = os.path.join(os.path.expanduser("~"), ".sentinel", "sentinel.db")
@@ -73,6 +74,20 @@ CREATE TRIGGER IF NOT EXISTS jobs_ai AFTER INSERT ON jobs BEGIN
     INSERT INTO jobs_fts(rowid, title, company, description) VALUES (new.id, new.title, new.company, new.description);
 END;
 
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+    run_id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    sources TEXT,
+    query TEXT,
+    location TEXT,
+    jobs_fetched INTEGER DEFAULT 0,
+    jobs_new INTEGER DEFAULT 0,
+    jobs_scored INTEGER DEFAULT 0,
+    high_risk_count INTEGER DEFAULT 0,
+    errors TEXT
+);
+
 CREATE TABLE IF NOT EXISTS flywheel_metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     cycle_ts TEXT,
@@ -95,7 +110,7 @@ CREATE TABLE IF NOT EXISTS flywheel_metrics (
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
@@ -129,10 +144,8 @@ class SentinelDB:
             "ALTER TABLE flywheel_metrics ADD COLUMN patterns_promoted INTEGER DEFAULT 0",
             "ALTER TABLE flywheel_metrics ADD COLUMN patterns_deprecated INTEGER DEFAULT 0",
         ]:
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):
                 self.conn.execute(col_sql)
-            except sqlite3.OperationalError:
-                pass  # column already exists
         self.conn.commit()
 
     # ------------------------------------------------------------------
@@ -230,6 +243,76 @@ class SentinelDB:
                 d["signals"] = json.loads(d.get("signals_json") or "[]")
             except (json.JSONDecodeError, TypeError):
                 d["signals"] = []
+            results.append(d)
+        return results
+
+    def get_job_by_url(self, url: str) -> dict | None:
+        """Check if a job with this URL already exists. Returns the row dict or None."""
+        row = self.conn.execute(
+            "SELECT * FROM jobs WHERE url = ?", (url,)
+        ).fetchone()
+        return _row_to_dict(row)
+
+    # ------------------------------------------------------------------
+    # Ingestion runs
+    # ------------------------------------------------------------------
+
+    def save_ingestion_run(self, run: dict) -> None:
+        """Persist an IngestionRun record."""
+        sources = run.get("sources", run.get("sources_queried", []))
+        if not isinstance(sources, str):
+            sources = json.dumps(sources)
+        errors = run.get("errors", [])
+        if not isinstance(errors, str):
+            errors = json.dumps(errors)
+
+        self.conn.execute(
+            """
+            INSERT INTO ingestion_runs
+                (run_id, started_at, completed_at, sources, query, location,
+                 jobs_fetched, jobs_new, jobs_scored, high_risk_count, errors)
+            VALUES
+                (:run_id, :started_at, :completed_at, :sources, :query, :location,
+                 :jobs_fetched, :jobs_new, :jobs_scored, :high_risk_count, :errors)
+            ON CONFLICT(run_id) DO UPDATE SET
+                completed_at   = excluded.completed_at,
+                jobs_fetched   = excluded.jobs_fetched,
+                jobs_new       = excluded.jobs_new,
+                jobs_scored    = excluded.jobs_scored,
+                high_risk_count= excluded.high_risk_count,
+                errors         = excluded.errors
+            """,
+            {
+                "run_id": run.get("run_id", ""),
+                "started_at": run.get("started_at", _now_iso()),
+                "completed_at": run.get("completed_at"),
+                "sources": sources,
+                "query": run.get("query", ""),
+                "location": run.get("location", ""),
+                "jobs_fetched": run.get("jobs_fetched", 0),
+                "jobs_new": run.get("jobs_new", 0),
+                "jobs_scored": run.get("jobs_scored", 0),
+                "high_risk_count": run.get("high_risk_count", 0),
+                "errors": errors,
+            },
+        )
+        self.conn.commit()
+
+    def get_ingestion_history(self, limit: int = 20) -> list[dict]:
+        """Return the most recent ingestion runs, newest first."""
+        rows = self.conn.execute(
+            "SELECT * FROM ingestion_runs ORDER BY started_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            for field in ("sources", "errors"):
+                raw = d.get(field, "[]")
+                try:
+                    d[field] = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError):
+                    d[field] = []
             results.append(d)
         return results
 

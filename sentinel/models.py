@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class RiskLevel(Enum):
@@ -106,7 +105,7 @@ class ValidationResult:
     scam_score: float = 0.0
     confidence: float = 0.0
     risk_level: RiskLevel = RiskLevel.LOW
-    company_profile: Optional[CompanyProfile] = None
+    company_profile: CompanyProfile | None = None
     ai_analysis: str = ""
     ai_tier_used: str = ""
     analysis_time_ms: float = 0.0
