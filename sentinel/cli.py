@@ -87,9 +87,9 @@ def analyze(ctx: click.Context, input_text: str, title: str, company: str, no_ai
 
     try:
         if is_url:
-            result = analyze_url(input_text)
+            result = analyze_url(input_text, use_ai=use_ai)
         else:
-            result = analyze_text(input_text, title=title, company=company)
+            result = analyze_text(input_text, title=title, company=company, use_ai=use_ai)
     except Exception as exc:
         if ctx.obj.get("json"):
             click.echo(json.dumps({"error": str(exc)}, indent=2))
