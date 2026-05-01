@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap');
+
 /* ============================================================
    JobSentinel — style.css
    Dark theme, GitHub-inspired palette, mobile-first
@@ -7,25 +9,42 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #0d1117;
-  --surface:   #161b22;
-  --surface2:  #1c2128;
-  --border:    #30363d;
+  --bg:        #0a0c10;
+  --surface:   #12141a;
+  --surface2:  #1a1d25;
+  --border:    rgba(255,255,255,0.08);
   --accent:    #58a6ff;
   --accent-dim:#1f6feb;
   --green:     #3fb950;
   --yellow:    #d29922;
   --red:       #f85149;
   --orange:    #db6d28;
-  --text:      #e6edf3;
-  --muted:     #8b949e;
+  --text:      rgba(255,255,255,0.92);
+  --muted:     rgba(255,255,255,0.55);
   --radius:    12px;
   --radius-sm: 8px;
-  --font:      -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
-               Helvetica, Arial, sans-serif;
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font:      var(--font-body);
   --mono:      "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --shadow:    0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
   --glow:      0 0 0 1px rgba(88,166,255,.15);
+  --text-tertiary: rgba(255,255,255,0.35);
+  --border-hover: rgba(255,255,255,0.14);
+  --surface-hover: rgba(255,255,255,0.04);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
 }
 
 html { scroll-behavior: smooth; font-size: 16px; }
@@ -35,12 +54,24 @@ body {
   color: var(--text);
   font-family: var(--font);
   line-height: 1.6;
+  letter-spacing: 0.01em;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a {
+  color: var(--accent);
+  text-decoration: none;
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-size: 0% 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size var(--duration-normal) var(--ease-out);
+}
+a:hover {
+  background-size: 100% 1px;
+  text-decoration: none;
+}
 
 img { max-width: 100%; display: block; }
 
@@ -79,9 +110,9 @@ nav {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(13,17,23,.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(10,12,16,.92);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
   border-bottom: 1px solid var(--border);
 }
 
@@ -163,15 +194,13 @@ nav {
 }
 
 .hero-title {
-  font-size: clamp(2.2rem, 5vw, 3.8rem);
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 5vw, 3.6rem);
   font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -.02em;
+  line-height: 1.1;
+  letter-spacing: -.03em;
   margin-bottom: 20px;
-  background: linear-gradient(160deg, #fff 40%, var(--accent) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text);
 }
 
 .hero-tagline {
@@ -203,6 +232,7 @@ nav {
   text-decoration: none;
 }
 .btn:hover { transform: translateY(-2px); text-decoration: none; }
+.btn:active { transform: scale(0.97); }
 
 .btn-primary {
   background: var(--accent);
@@ -245,7 +275,8 @@ nav {
   margin-bottom: 52px;
 }
 .section-header h2 {
-  font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
   font-weight: 700;
   letter-spacing: -.02em;
   margin-bottom: 12px;
@@ -257,7 +288,7 @@ nav {
   margin: 0 auto;
 }
 
-section { padding: 80px 0; }
+section { padding: 96px 0; }
 section:nth-child(even) { background: var(--surface); }
 
 /* ---------- How It Works ---------- */
@@ -302,6 +333,7 @@ section:nth-child(even) { background: var(--surface); }
 }
 
 .step-card h3 {
+  font-family: var(--font-display);
   font-size: 1.05rem;
   font-weight: 700;
   margin-bottom: 8px;
@@ -319,26 +351,17 @@ section:nth-child(even) { background: var(--surface); }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 28px;
-  transition: transform .2s, box-shadow .2s, border-color .2s;
+  padding: 28px 24px;
+  transition: border-color var(--duration-normal) ease, transform var(--duration-normal) ease, box-shadow var(--duration-normal) ease;
   position: relative;
   overflow: hidden;
 }
-.feature-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
-  opacity: 0;
-  transition: opacity .3s;
-}
+.feature-card::before { display: none; }
 .feature-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow);
-  border-color: rgba(88,166,255,.3);
+  transform: translateY(-2px);
+  border-color: var(--border-hover);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
 }
-.feature-card:hover::before { opacity: 1; }
 
 .feature-icon {
   font-size: 1.8rem;
@@ -347,6 +370,7 @@ section:nth-child(even) { background: var(--surface); }
 }
 
 .feature-card h3 {
+  font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 700;
   margin-bottom: 8px;
@@ -446,7 +470,7 @@ textarea#jobInput::placeholder { color: var(--muted); }
   justify-content: center;
   font-weight: 800;
 }
-.score-circle .score-num { font-size: 1.8rem; line-height: 1; }
+.score-circle .score-num { font-family: var(--font-display); font-size: 1.8rem; line-height: 1; }
 .score-circle .score-label { font-size: .6rem; letter-spacing: .06em; text-transform: uppercase; margin-top: 2px; }
 
 .score-green  { border-color: var(--green);  color: var(--green); }
@@ -594,7 +618,8 @@ textarea#jobInput::placeholder { color: var(--muted); }
 }
 
 .stat-num {
-  font-size: 2.8rem;
+  font-family: var(--font-display);
+  font-size: 2.6rem;
   font-weight: 800;
   color: var(--accent);
   line-height: 1;
@@ -717,7 +742,7 @@ footer {
   margin-bottom: 40px;
 }
 
-.footer-brand h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; }
+.footer-brand h3 { font-family: var(--font-display); font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; }
 .footer-brand p  { font-size: .85rem; color: var(--muted); max-width: 240px; line-height: 1.55; }
 
 .footer-col h4 { font-size: .8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 14px; }
