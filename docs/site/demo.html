@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="JobSentinel Extended Demo — side-by-side scam vs. safe job posting analysis with detailed signal breakdowns." />
+  <title>JobSentinel — Extended Demo</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
+  <style>
+    /* Demo-page–specific overrides */
+    .demo-page-hero {
+      padding: 60px 0 40px;
+      text-align: center;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .demo-page-hero h1 {
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -.02em;
+      margin-bottom: 12px;
+    }
+    .demo-page-hero p { color: var(--muted); font-size: 1.05rem; max-width: 520px; margin: 0 auto; }
+
+    /* Side-by-side comparison */
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 800px) { .comparison-grid { grid-template-columns: 1fr; } }
+
+    .posting-panel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 700;
+      font-size: .9rem;
+    }
+    .panel-header.scam { background: rgba(248,81,73,.08); color: var(--red); border-color: rgba(248,81,73,.2); }
+    .panel-header.safe { background: rgba(63,185,80,.08);  color: var(--green); border-color: rgba(63,185,80,.2); }
+
+    .panel-body {
+      padding: 18px;
+      font-size: .82rem;
+      font-family: var(--mono);
+      line-height: 1.65;
+      color: var(--muted);
+      white-space: pre-wrap;
+      max-height: 340px;
+      overflow-y: auto;
+    }
+
+    .panel-result {
+      border-top: 1px solid var(--border);
+      padding: 14px 18px;
+    }
+
+    /* Inline highlight */
+    .hl-red    { background: rgba(248,81,73,.18); color: var(--red);    border-radius: 2px; padding: 0 2px; }
+    .hl-green  { background: rgba(63,185,80,.15);  color: var(--green);  border-radius: 2px; padding: 0 2px; }
+    .hl-orange { background: rgba(219,109,40,.15); color: var(--orange); border-radius: 2px; padding: 0 2px; }
+
+    /* Education cards */
+    .edu-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    .edu-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+    }
+    .edu-card h3 { font-size: .95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .edu-card ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .edu-card li { font-size: .83rem; color: var(--muted); padding-left: 16px; position: relative; line-height: 1.5; }
+    .edu-card li::before { content: '→'; position: absolute; left: 0; color: var(--accent); }
+
+    /* Full analyzer */
+    .full-analyzer {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      max-width: 860px;
+      margin: 0 auto;
+      box-shadow: var(--shadow);
+    }
+
+    .analyzer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+
+    .analyzer-header h3 { font-size: .95rem; font-weight: 700; }
+
+    #fullInput {
+      width: 100%;
+      height: 220px;
+      background: var(--surface2);
+      border: none;
+      padding: 20px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: .82rem;
+      line-height: 1.65;
+      outline: none;
+      resize: vertical;
+      border-bottom: 1px solid var(--border);
+    }
+    #fullInput::placeholder { color: var(--muted); }
+
+    .analyzer-controls {
+      display: flex;
+      gap: 10px;
+      padding: 14px 20px;
+      background: var(--surface);
+      flex-wrap: wrap;
+    }
+
+    #fullResult {
+      padding: 20px;
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Signal breakdown table */
+    .breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+      margin-top: 16px;
+    }
+    .breakdown-table th {
+      text-align: left;
+      padding: 8px 12px;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: .75rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+    .breakdown-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(48,54,61,.6);
+      vertical-align: middle;
+    }
+    .breakdown-table tr:last-child td { border-bottom: none; }
+    .breakdown-table tr:hover td { background: rgba(255,255,255,.02); }
+
+    .cat-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: .72rem;
+      font-weight: 600;
+    }
+    .cat-red_flag  { background: rgba(248,81,73,.15);  color: var(--red); }
+    .cat-warning   { background: rgba(219,109,40,.15); color: var(--orange); }
+    .cat-ghost_job { background: rgba(210,153,34,.12); color: var(--yellow); }
+    .cat-structural{ background: rgba(88,166,255,.12); color: var(--accent); }
+    .cat-positive  { background: rgba(63,185,80,.12);  color: var(--green); }
+
+    /* Tips section */
+    .tips-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .tip-item {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 20px;
+    }
+    .tip-num {
+      flex-shrink: 0;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #000;
+      font-weight: 700;
+      font-size: .8rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .tip-item h4 { font-size: .9rem; font-weight: 700; margin-bottom: 4px; }
+    .tip-item p  { font-size: .82rem; color: var(--muted); line-height: 1.55; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-logo">
+      <span class="nav-logo-icon">🛡</span>
+      <span>JobSentinel</span>
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="index.html#how-it-works">How It Works</a></li>
+      <li><a href="index.html#features">Features</a></li>
+      <li><a href="#analyzer">Full Demo</a></li>
+      <li><a href="#education">Learn</a></li>
+      <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="#analyzer" class="nav-cta">Analyze Now</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" aria-label="Toggle menu">☰</button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="demo-page-hero">
+  <div class="container">
+    <div style="margin-bottom:14px"><span class="badge badge-accent">Extended Demo</span></div>
+    <h1>See How JobSentinel Thinks</h1>
+    <p>Side-by-side comparison of a scam posting vs. a legitimate job — with full signal breakdowns and educational context.</p>
+  </div>
+</div>
+
+<!-- SIDE-BY-SIDE COMPARISON -->
+<section id="comparison" style="background:var(--bg)">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Scam vs. Safe: Side by Side</h2>
+      <p>Click "Analyze" on either panel to see how JobSentinel scores each posting.</p>
+    </div>
+
+    <div class="comparison-grid reveal">
+
+      <!-- SCAM PANEL -->
+      <div class="posting-panel">
+        <div class="panel-header scam">🚨 Scam Posting Example</div>
+        <div class="panel-body" id="scamText">URGENT HIRING - Work From Home - No Experience Needed!
+
+We are a fast-growing company looking for motivated individuals to join our team immediately!
+Earn up to $1,000 per day working from home — guaranteed income every week!
+
+• No experience required — anyone can do this!
+• Set your own hours, unlimited earning potential
+• Be your own boss and achieve financial freedom
+
+To get started, you'll need to purchase your starter kit ($299) to cover training materials and equipment. Once hired, you'll receive a certified check — simply deposit it and send us $150 for processing fees.
+
+We also handle package shipments — you'll receive packages at your home and reship them to our clients.
+
+APPLY NOW — limited spots available! Offer expires TODAY.
+
+For faster processing, please send a copy of your ID and social security number along with your bank routing number to begin payroll setup.
+
+Don't miss this amazing opportunity!!!</div>
+        <div class="panel-result">
+          <button class="btn btn-sm" onclick="analyzePanel('scam')"
+            style="background:rgba(248,81,73,.12);color:var(--red);border:1px solid rgba(248,81,73,.25)">
+            🔍 Analyze This Posting
+          </button>
+          <div id="scamResult" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+      <!-- SAFE PANEL -->
+      <div class="posting-panel">
+        <div class="panel-header safe">✅ Legitimate Posting Example</div>
+        <div class="panel-body" id="safeText">Senior Software Engineer — Platform Infrastructure
+Acme Corp | Remote (US) | Full-time
+
+About Acme Corp:
+Founded in 2015, Acme Corp (NASDAQ: ACME) is a cloud infrastructure company trusted by 10,000+ businesses. Our team of 450 engineers builds the tools that power modern software delivery.
+
+Role Overview:
+We're looking for a Senior Software Engineer to join our Platform team. You'll own the design and implementation of our internal developer tooling, working closely with our SRE and product teams.
+
+Qualifications:
+• 5+ years of software engineering experience
+• Strong proficiency in Go or Rust
+• Experience with Kubernetes, Terraform
+• BS/MS in Computer Science or equivalent experience
+
+Interview Process:
+1. Initial phone screen (30 min) with recruiter
+2. Technical interview with engineering panel
+3. System design interview
+4. Reference check and background check
+
+Compensation: $160,000–$200,000 base salary
+Benefits: Health, dental, vision insurance; 401(k) with 4% match; 20 days PTO; parental leave; equity
+
+Apply at careers.acmecorp.com — no recruiters please.</div>
+        <div class="panel-result">
+          <button class="btn btn-sm" onclick="analyzePanel('safe')"
+            style="background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.25)">
+            🔍 Analyze This Posting
+          </button>
+          <div id="safeResult" style="margin-top:12px"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- FULL ANALYZER -->
+<section id="analyzer">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Full Signal Analyzer</h2>
+      <p>Paste any job description for a complete breakdown — all signals shown with categories and weights.</p>
+    </div>
+
+    <div class="reveal">
+      <div class="full-analyzer">
+        <div class="analyzer-header">
+          <h3>🔬 Deep Analysis Mode</h3>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-secondary" onclick="loadFullSample('scam')">Load Scam</button>
+            <button class="btn btn-sm btn-secondary" onclick="loadFullSample('safe')">Load Safe</button>
+          </div>
+        </div>
+        <textarea id="fullInput" placeholder="Paste your job description here for a detailed signal breakdown..."></textarea>
+        <div class="analyzer-controls">
+          <button class="btn btn-primary" onclick="analyzeFullDemo()">🔍 Deep Analyze</button>
+          <button class="btn btn-secondary" onclick="clearFullDemo()">✕ Clear</button>
+        </div>
+        <div id="fullResult" role="region" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EDUCATION -->
+<section id="education" style="background:var(--surface)">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Know What to Look For</h2>
+      <p>Understanding each signal category makes you a sharper job seeker — with or without our tool.</p>
+    </div>
+
+    <div class="edu-grid reveal">
+
+      <div class="edu-card">
+        <h3>🚨 Red Flags — Immediate Danger</h3>
+        <ul>
+          <li>Any request for upfront payment, fees, or equipment purchases before starting</li>
+          <li>Employers asking for SSN, bank account numbers, or financial info before a formal offer</li>
+          <li>Overpayment check scams — you deposit a check and send money back</li>
+          <li>Guaranteed income that sounds unrealistically high for the role</li>
+          <li>Reshipping jobs — forwarding packages is often money laundering</li>
+          <li>MLM/pyramid structures disguised as "sales opportunities"</li>
+        </ul>
+      </div>
+
+      <div class="edu-card">
+        <h3>⚠️ Warnings — Investigate Further</h3>
+        <ul>
+          <li>Company has no verifiable web presence, LinkedIn page, or physical address</li>
+          <li>The salary is dramatically above market rate for the listed qualifications</li>
+          <li>Job description is vague, generic, or copied verbatim from other postings</li>
+          <li>Contact email uses Gmail/Yahoo instead of a corporate domain</li>
+          <li>Interview conducted entirely over text message or WhatsApp</li>
+          <li>Heavy use of emotional language, exclamation marks, or urgency</li>
+        </ul>
+      </div>
+
+      <div class="edu-card">
+        <h3>👻 Ghost Jobs — Real Company, Fake Opening</h3>
+        <ul>
+          <li>Job posted months ago with no updates or expiration</li>
+          <li>Company says "always hiring" without a specific need</li>
+          <li>Listing is duplicated across many cities simultaneously</li>
+          <li>No specific team, department, or hiring manager mentioned</li>
+          <li>Application goes into a portal with no confirmation or follow-up</li>
+          <li>Goal is to build a resume database, not fill an actual role</li>
+        </ul>
+      </div>
+
+      <div class="edu-card">
+        <h3>✅ Positive Trust Signals</h3>
+        <ul>
+          <li>Named hiring manager or recruiter with verifiable LinkedIn profile</li>
+          <li>Specific, realistic compensation range with benefit details</li>
+          <li>Multi-step interview process described (screen → technical → offer)</li>
+          <li>Company founded year, headcount, and funding stage listed</li>
+          <li>Application through official ATS (Greenhouse, Lever, Workday, etc.)</li>
+          <li>Background check requested <em>after</em> a conditional offer — not before</li>
+        </ul>
+      </div>
+
+      <div class="edu-card">
+        <h3>🔩 Structural Issues — Low Quality</h3>
+        <ul>
+          <li>No qualifications, requirements, or experience level specified</li>
+          <li>Job title is vague ("Business Developer", "Brand Ambassador", "Sales Rep")</li>
+          <li>No responsibilities or day-to-day tasks described</li>
+          <li>Posting is under 100 words with no substantive content</li>
+          <li>Heavy use of buzzwords without any concrete role description</li>
+          <li>Commission-only with no base salary disclosed upfront</li>
+        </ul>
+      </div>
+
+      <div class="edu-card">
+        <h3>🛡 How to Protect Yourself</h3>
+        <ul>
+          <li>Research the company on LinkedIn, Glassdoor, and their official website</li>
+          <li>Never pay money to get a job — legitimate employers pay you</li>
+          <li>Verify the recruiter's email domain matches the company website</li>
+          <li>Search "[Company Name] scam" before applying</li>
+          <li>Ask for the physical office address and verify it on Google Maps</li>
+          <li>Report suspicious postings to the FTC at reportfraud.ftc.gov</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ACTIONABLE TIPS -->
+<section id="tips" style="background:var(--bg)">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>10 Rules for Safer Job Searching</h2>
+      <p>From the patterns in thousands of scam postings — these rules catch the majority of fraud.</p>
+    </div>
+
+    <div class="tips-list reveal">
+      <div class="tip-item">
+        <span class="tip-num">1</span>
+        <div>
+          <h4>Never pay to work</h4>
+          <p>Legitimate employers never charge application fees, require you to purchase starter kits, or ask you to cover "training costs." If money flows from you to them before your first paycheck, stop immediately.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">2</span>
+        <div>
+          <h4>Verify the domain matches</h4>
+          <p>If the posting says "Acme Corp" but the recruiter emails you from acme-corp-hiring@gmail.com instead of recruiter@acmecorp.com, that is a major red flag. Real companies use corporate email domains.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">3</span>
+        <div>
+          <h4>Guard your SSN until you have an offer</h4>
+          <p>Social Security Numbers are only needed for tax paperwork (W-4, I-9) after you've accepted a formal written offer. Any earlier request is suspicious — especially during an application.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">4</span>
+        <div>
+          <h4>Research before you apply</h4>
+          <p>Search the company name plus "scam", "review", and "glassdoor". Check that their website has a real About page, a physical address, and a founding year that matches what they claim.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">5</span>
+        <div>
+          <h4>Be skeptical of guaranteed income</h4>
+          <p>No legitimate employer guarantees specific dollar amounts before you start. Sales roles have targets, but promises of "$1,000/day guaranteed" are designed to recruit victims, not employees.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">6</span>
+        <div>
+          <h4>Don't reship packages</h4>
+          <p>Package forwarding or "home-based shipping coordinator" roles are almost always money mule operations. The packages contain stolen goods, and you could face criminal liability.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">7</span>
+        <div>
+          <h4>Insist on a video or in-person interview</h4>
+          <p>Real companies interview candidates by video or in person. If a "hiring manager" only contacts you by text, WhatsApp, or Telegram and makes an offer without ever speaking with you, it's a scam.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">8</span>
+        <div>
+          <h4>Treat urgency as a warning</h4>
+          <p>Phrases like "act now", "limited spots", "offer expires today", or "hired on the spot" are pressure tactics. Legitimate hiring processes take time. Urgency is designed to stop you from thinking critically.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">9</span>
+        <div>
+          <h4>Never deposit a check and send money back</h4>
+          <p>The overpayment scam is one of the oldest tricks: you receive a check, deposit it, and wire back the "excess." Banks can reverse checks days later — leaving you responsible for the full amount you sent.</p>
+        </div>
+      </div>
+      <div class="tip-item">
+        <span class="tip-num">10</span>
+        <div>
+          <h4>Report what you find</h4>
+          <p>Reporting scam postings to the job board and to the FTC (reportfraud.ftc.gov) or FBI IC3 (ic3.gov) helps protect other job seekers. Take a screenshot before the posting disappears.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <h3>🛡 JobSentinel</h3>
+        <p>AI-powered job scam detection. Free, open source, and constantly improving.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Pages</h4>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="index.html#features">Features</a></li>
+          <li><a href="#analyzer">Full Demo</a></li>
+          <li><a href="index.html#install">Install</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/README.md" target="_blank" rel="noopener">Docs</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">Issues</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          <li><a href="https://reportfraud.ftc.gov" target="_blank" rel="noopener">Report Fraud (FTC)</a></li>
+          <li><a href="https://ic3.gov" target="_blank" rel="noopener">FBI IC3</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>© 2025 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+<script>
+/* Demo-page–specific functions */
+const PANEL_TEXTS = {
+  scam: document.getElementById('scamText')?.innerText || '',
+  safe: document.getElementById('safeText')?.innerText || '',
+};
+
+function analyzePanel(type) {
+  const text = PANEL_TEXTS[type] || document.getElementById(type + 'Text')?.innerText || '';
+  const resultEl = document.getElementById(type + 'Result');
+  if (!resultEl || !text) return;
+
+  const analysis = runDemo(text);
+  const score = analysis.scamScore;
+  const verdict = scoreVerdict(score);
+  const cls = scoreClass(score);
+
+  resultEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
+      <div class="score-circle ${cls}" style="width:64px;height:64px">
+        <span class="score-num" style="font-size:1.3rem">${score}</span>
+        <span class="score-label">/100</span>
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:.9rem;margin-bottom:4px">${verdict.label}</div>
+        <div style="font-size:.78rem;color:var(--muted)">${analysis.triggered.length} signals matched</div>
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+          ${analysis.triggered.slice(0,4).map(s => `<span class="badge ${s.weight < 0 ? 'badge-green' : 'badge-red'}" style="font-size:.65rem;padding:2px 8px">${s.label}</span>`).join('')}
+          ${analysis.triggered.length > 4 ? `<span style="font-size:.72rem;color:var(--muted);align-self:center">+${analysis.triggered.length - 4} more</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
+function loadFullSample(type) {
+  const ta = document.getElementById('fullInput');
+  if (!ta) return;
+  ta.value = SAMPLES[type] || '';
+}
+
+function clearFullDemo() {
+  const ta = document.getElementById('fullInput');
+  const result = document.getElementById('fullResult');
+  if (ta) ta.value = '';
+  if (result) { result.innerHTML = ''; result.style.display = 'none'; }
+}
+
+function analyzeFullDemo() {
+  const ta = document.getElementById('fullInput');
+  const result = document.getElementById('fullResult');
+  if (!ta || !result) return;
+
+  const text = ta.value.trim();
+  if (text.length < 30) {
+    ta.style.outline = '2px solid var(--red)';
+    setTimeout(() => { ta.style.outline = ''; }, 1500);
+    return;
+  }
+
+  const analysis = runDemo(text);
+  const { scamScore, triggered } = analysis;
+  const verdict = scoreVerdict(scamScore);
+  const cls = scoreClass(scamScore);
+
+  const tableRows = triggered.length === 0
+    ? '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">No signals matched in this text.</td></tr>'
+    : triggered.map(s => `
+      <tr>
+        <td style="font-weight:600">${s.label}</td>
+        <td><span class="cat-pill cat-${s.category}">${s.category.replace('_', ' ')}</span></td>
+        <td style="color:var(--muted);font-size:.78rem;font-family:var(--mono)">${s.matched}</td>
+        <td style="font-family:var(--mono);font-weight:700;color:${s.weight < 0 ? 'var(--green)' : s.weight >= 30 ? 'var(--red)' : 'var(--orange)'}">${s.weight > 0 ? '+' : ''}${s.weight}</td>
+      </tr>`).join('');
+
+  result.style.display = 'block';
+  result.innerHTML = `
+    <div class="score-header" style="margin-bottom:20px">
+      <div class="score-circle ${cls}">
+        <span class="score-num">${scamScore}</span>
+        <span class="score-label">/ 100</span>
+      </div>
+      <div class="score-meta">
+        <h3>${verdict.label}</h3>
+        <p>${verdict.desc}</p>
+        <p style="margin-top:8px;font-size:.8rem;color:var(--muted)">${triggered.length} signal${triggered.length !== 1 ? 's' : ''} matched &middot; Bayesian composite score</p>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="breakdown-table">
+        <thead>
+          <tr>
+            <th>Signal</th>
+            <th>Category</th>
+            <th>Matched Text</th>
+            <th>Weight</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
+}
+
+// Expose to window
+window.analyzePanel = analyzePanel;
+window.loadFullSample = loadFullSample;
+window.clearFullDemo = clearFullDemo;
+window.analyzeFullDemo = analyzeFullDemo;
+
+// Auto-analyze comparison panels on load
+window.addEventListener('DOMContentLoaded', () => {
+  // Small delay to ensure app.js functions are ready
+  setTimeout(() => {
+    analyzePanel('scam');
+    analyzePanel('safe');
+  }, 100);
+});
+</script>
+</body>
+</html>

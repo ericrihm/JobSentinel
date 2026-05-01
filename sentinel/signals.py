@@ -1,9 +1,25 @@
-"""Signal extraction: 40+ scam indicators for LinkedIn job postings."""
+"""Signal extraction: 50+ scam indicators for LinkedIn job postings."""
 
+from __future__ import annotations
+
+import hashlib
+import logging
 import re
 from datetime import UTC, datetime
+from functools import lru_cache
+from typing import TYPE_CHECKING
 
+from sentinel.adversarial import EvasionDetector, TextNormalizer
 from sentinel.models import JobPosting, ScamSignal, SignalCategory
+
+if TYPE_CHECKING:
+    from sentinel.models import ScamPattern
+
+logger = logging.getLogger(__name__)
+
+# Module-level singletons — cheap to construct, safe to share across calls
+_NORMALIZER = TextNormalizer()
+_EVASION_DETECTOR = EvasionDetector()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -208,14 +224,87 @@ def check_no_company_presence(job: JobPosting) -> ScamSignal | None:
 
 
 # ---------------------------------------------------------------------------
+# Salary benchmark helpers
+# ---------------------------------------------------------------------------
+
+# Maps keywords found in a job title to a salary_benchmarks category.
+# Evaluated in order — first match wins.
+_TITLE_CATEGORY_MAP: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\b(software|engineer|developer|programmer|devops|sre|backend|frontend|full.?stack|sde|swe)\b", re.IGNORECASE), "software_engineer"),
+    (re.compile(r"\b(data scientist|machine learning|ml engineer|ai engineer)\b", re.IGNORECASE), "data_scientist"),
+    (re.compile(r"\b(data analyst|business analyst|analytics)\b", re.IGNORECASE), "data_analyst"),
+    (re.compile(r"\b(nurs|rn\b|lpn|cna|healthcare|medical assistant|patient)\b", re.IGNORECASE), "nursing"),
+    (re.compile(r"\b(account(ant|ing)|bookkeep|cpa|auditor|financial analyst|controller)\b", re.IGNORECASE), "accounting"),
+    (re.compile(r"\b(project manager|scrum master|program manager|pmo)\b", re.IGNORECASE), "project_manager"),
+    (re.compile(r"\b(marketing|seo|content (strateg|market)|social media manager|brand)\b", re.IGNORECASE), "marketing"),
+    (re.compile(r"\b(sales (rep|executive|manager|associate)|account executive|business development)\b", re.IGNORECASE), "sales"),
+    (re.compile(r"\b(human resources|hr (manager|generalist|coordinator)|recruiter|talent acquisition)\b", re.IGNORECASE), "human_resources"),
+    (re.compile(r"\b(graphic design|ux|ui designer|visual designer|illustrator)\b", re.IGNORECASE), "graphic_designer"),
+    (re.compile(r"\b(teach|instructor|tutor|professor|educator|curriculum)\b", re.IGNORECASE), "teacher"),
+    (re.compile(r"\b(warehouse|logistics|forklift|shipping|inventory|fulfillment|picker|packer)\b", re.IGNORECASE), "warehouse"),
+    (re.compile(r"\b(paralegal|attorney|lawyer|counsel|legal)\b", re.IGNORECASE), "legal"),
+    (re.compile(r"\b(customer (service|support|success)|call center|helpdesk|support rep)\b", re.IGNORECASE), "customer_service"),
+    (re.compile(r"\b(admin(istrative)?( assistant)?|office manager|executive assistant|receptionist|clerk)\b", re.IGNORECASE), "admin_assistant"),
+]
+
+# Maps raw experience_level strings to benchmark level keys
+_LEVEL_MAP: dict[str, str] = {
+    "entry": "entry",
+    "entry level": "entry",
+    "entry-level": "entry",
+    "internship": "entry",
+    "junior": "entry",
+    "mid": "mid",
+    "mid-level": "mid",
+    "mid level": "mid",
+    "associate": "mid",
+    "intermediate": "mid",
+    "senior": "senior",
+    "lead": "senior",
+    "principal": "senior",
+    "staff": "senior",
+    "director": "senior",
+    "manager": "mid",  # conservative default for generic manager titles
+}
+
+
+def classify_job_category(title: str) -> str | None:
+    """Return salary_benchmarks category key for a job title, or None."""
+    for pattern, category in _TITLE_CATEGORY_MAP:
+        if pattern.search(title):
+            return category
+    return None
+
+
+def normalize_level(experience_level: str) -> str:
+    """Map raw experience_level to 'entry', 'mid', or 'senior'. Defaults to 'mid'."""
+    return _LEVEL_MAP.get(experience_level.lower().strip(), "mid")
+
+
+@lru_cache(maxsize=256)
+def _get_benchmark_cached(category: str, level: str) -> tuple[int, int, int, int] | None:
+    """Fetch (p25, p50, p75, p90) from DB; cached per process."""
+    try:
+        from sentinel.db import SentinelDB
+        with SentinelDB() as db:
+            row = db.get_salary_benchmark(category, level)
+        if row is None:
+            return None
+        return (row["p25"], row["p50"], row["p75"], row["p90"])
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Warnings — weight 0.4–0.7
 # ---------------------------------------------------------------------------
 
 def check_salary_anomaly(job: JobPosting) -> ScamSignal | None:
     lo, hi = job.salary_min, job.salary_max
-    level = (job.experience_level or "").lower()
+    level_raw = (job.experience_level or "").lower()
     entry_levels = {"entry", "entry level", "entry-level", "internship", "junior"}
 
+    # --- Wide-range check (existing fallback) ---
     if lo > 0 and hi > 0 and hi / lo > 3.0:
         return ScamSignal(
             name="salary_anomaly",
@@ -226,15 +315,49 @@ def check_salary_anomaly(job: JobPosting) -> ScamSignal | None:
             evidence=f"{lo}–{hi}",
         )
 
-    if level in entry_levels:
-        ceiling = hi if hi > 0 else lo
+    # --- Market-rate comparison ---
+    ceiling = hi if hi > 0 else lo
+    if ceiling > 0:
+        category = classify_job_category(job.title)
+        if category:
+            level_key = normalize_level(level_raw)
+            benchmark = _get_benchmark_cached(category, level_key)
+            if benchmark is not None:
+                _p25, _p50, _p75, p90 = benchmark
+                if ceiling > 3.0 * p90:
+                    return ScamSignal(
+                        name="salary_anomaly",
+                        category=SignalCategory.WARNING,
+                        weight=0.85,
+                        confidence=0.80,
+                        detail=(
+                            f"Salary ${ceiling:,.0f} is >3× the P90 market rate "
+                            f"(${p90:,}) for {level_key} {category.replace('_', ' ')} — highly suspicious"
+                        ),
+                        evidence=f"{ceiling} vs P90={p90}",
+                    )
+                if ceiling > 2.0 * p90:
+                    return ScamSignal(
+                        name="salary_anomaly",
+                        category=SignalCategory.WARNING,
+                        weight=0.70,
+                        confidence=0.72,
+                        detail=(
+                            f"Salary ${ceiling:,.0f} is >2× the P90 market rate "
+                            f"(${p90:,}) for {level_key} {category.replace('_', ' ')} — suspicious"
+                        ),
+                        evidence=f"{ceiling} vs P90={p90}",
+                    )
+
+    # --- Legacy entry-level ceiling check (no category match) ---
+    if level_raw in entry_levels:
         if ceiling > 500_000:
             return ScamSignal(
                 name="salary_anomaly",
                 category=SignalCategory.WARNING,
                 weight=0.70,
                 confidence=0.72,
-                detail=f"Unrealistically high salary for {level} role: ${ceiling:,.0f}",
+                detail=f"Unrealistically high salary for {level_raw} role: ${ceiling:,.0f}",
                 evidence=str(ceiling),
             )
 
@@ -372,6 +495,154 @@ def check_repost_pattern(job: JobPosting) -> ScamSignal | None:
     )
 
 
+_TALENT_POOL = re.compile(
+    r"\b(talent pipeline|talent community|talent pool|future openings?|"
+    r"expressions? of interest|join our (talent|candidate) network|"
+    r"pipeline (of candidates|for future)|upcoming opportunities)\b",
+    re.IGNORECASE,
+)
+
+_GENERIC_TITLES = re.compile(
+    r"^\s*(various positions?|multiple openings?|multiple positions?|"
+    r"team member|general (applicant|application)|open application|"
+    r"general (hire|hiring)|various roles?|multiple roles?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def check_talent_pool_language(job: JobPosting) -> ScamSignal | None:
+    """Ghost job signal: talent pool / future-openings language indicates non-real position."""
+    m = _TALENT_POOL.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="talent_pool_language",
+        category=SignalCategory.GHOST_JOB,
+        weight=0.55,
+        confidence=0.65,
+        detail="Posting uses talent-pool / future-openings language — likely not a real open role",
+        evidence=m.group(0),
+    )
+
+
+def check_high_applicant_count(job: JobPosting) -> ScamSignal | None:
+    """Ghost job signal: >500 applicants on a >30-day-old posting suggests a ghost job."""
+    if job.applicant_count <= 500:
+        return None
+    days = _days_since_posted(job.posted_date)
+    if days is None or days <= 30:
+        return None
+    return ScamSignal(
+        name="high_applicant_count",
+        category=SignalCategory.GHOST_JOB,
+        weight=0.48,
+        confidence=0.55,
+        detail=(
+            f"Over {job.applicant_count} applicants on a {days}-day-old posting — "
+            "likely a ghost job or perpetually open pipeline role"
+        ),
+        evidence=f"{job.applicant_count} applicants, {days} days old",
+    )
+
+
+def check_role_title_generic(job: JobPosting) -> ScamSignal | None:
+    """Ghost job signal: extremely vague/generic role titles indicate non-specific pipeline postings."""
+    m = _GENERIC_TITLES.match(job.title)
+    if not m:
+        return None
+    return ScamSignal(
+        name="role_title_generic",
+        category=SignalCategory.GHOST_JOB,
+        weight=0.42,
+        confidence=0.55,
+        detail="Role title is extremely generic — indicative of a catch-all pipeline posting",
+        evidence=job.title,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Velocity / Temporal signals — weight 0.55–0.72
+# ---------------------------------------------------------------------------
+
+
+def check_high_posting_velocity(job: JobPosting, db=None) -> ScamSignal | None:
+    """Velocity signal: company posted >20 jobs in 24 hours (scam ring indicator)."""
+    if db is None:
+        return None
+    company = (job.company or "").strip()
+    if not company:
+        return None
+    row = db.get_posting_velocity(company)
+    if row is None:
+        return None
+    postings_24h = row.get("postings_24h", 0)
+    if postings_24h <= 20:
+        return None
+    return ScamSignal(
+        name="high_posting_velocity",
+        category=SignalCategory.GHOST_JOB,
+        weight=0.65,
+        confidence=0.70,
+        detail=(
+            f"Company '{company}' posted {postings_24h} jobs in the last 24 hours — "
+            "unusually high velocity consistent with scam ring activity"
+        ),
+        evidence=f"{postings_24h} postings in 24h",
+    )
+
+
+def check_new_recruiter_account(job: JobPosting) -> ScamSignal | None:
+    """Velocity signal: recruiter profile created <7 days ago is a strong scam indicator.
+
+    Convention: recruiter_connections == -1 encodes "account age <7 days" when
+    the ingestion pipeline has that data.  A value of -1 is never a valid
+    connection count, so it is safe to overload this field.
+    """
+    if job.recruiter_connections != -1:
+        return None
+    return ScamSignal(
+        name="new_recruiter_account",
+        category=SignalCategory.WARNING,
+        weight=0.55,
+        confidence=0.65,
+        detail="Recruiter account was created less than 7 days ago — strong scam indicator",
+        evidence="recruiter_account_age < 7 days",
+    )
+
+
+def _description_hash(description: str) -> str:
+    """Normalise whitespace and return a SHA-256 hex digest of the description."""
+    normalised = " ".join(description.split())
+    return hashlib.sha256(normalised.encode("utf-8")).hexdigest()
+
+
+def check_cross_posting_duplicate(job: JobPosting, db=None) -> ScamSignal | None:
+    """Velocity/dedup signal: same description text under a different company name."""
+    if db is None:
+        return None
+    desc = (job.description or "").strip()
+    if not desc:
+        return None
+    h = _description_hash(desc)
+    company = (job.company or "").strip()
+    matches = db.get_duplicate_description(h, exclude_company=company)
+    if not matches:
+        return None
+    other_companies = list({m["company_name"] for m in matches})[:3]
+    return ScamSignal(
+        name="cross_posting_duplicate",
+        category=SignalCategory.RED_FLAG,
+        weight=0.72,
+        confidence=0.80,
+        detail=(
+            "Identical job description found under different company name(s): "
+            + ", ".join(other_companies)
+            + " — strong scam-ring indicator"
+        ),
+        evidence=f"hash={h[:16]}… matched by {len(matches)} other posting(s)",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Structural — weight 0.4–0.6
 # ---------------------------------------------------------------------------
@@ -432,7 +703,7 @@ def check_established_company(job: JobPosting) -> ScamSignal | None:
     m = re.search(r"(\d+)", size_str)
     if not m:
         return None
-    if int(m.group(1)) < 1000:
+    if int(m.group(1)) < 100:
         return None
     return ScamSignal(
         name="established_company",
@@ -744,6 +1015,515 @@ def check_company_name_suspicious(job: JobPosting) -> ScamSignal | None:
 
 
 # ---------------------------------------------------------------------------
+# Knowledge-base pattern matching (wires knowledge.py patterns into scoring)
+# ---------------------------------------------------------------------------
+
+_kb_compiled_cache: tuple[list[tuple[ScamPattern, re.Pattern | None]], str] | None = None
+
+
+def _get_compiled_patterns(db_path: str = "") -> list[tuple[ScamPattern, re.Pattern | None]]:
+    """Load active patterns from the DB and compile their regexes (cached)."""
+    global _kb_compiled_cache
+    cache_key = db_path
+
+    if _kb_compiled_cache is not None and _kb_compiled_cache[1] == cache_key:
+        return _kb_compiled_cache[0]
+
+    compiled: list[tuple[ScamPattern, re.Pattern | None]] = []
+    try:
+        from sentinel.knowledge import KnowledgeBase
+        from sentinel.db import SentinelDB
+
+        db = SentinelDB(path=db_path) if db_path else SentinelDB()
+        kb = KnowledgeBase(db=db)
+        kb.seed_default_patterns()
+        patterns = kb.get_active_patterns()
+        for pat in patterns:
+            rx = None
+            if pat.regex and pat.regex.strip():
+                try:
+                    rx = re.compile(pat.regex)
+                except re.error:
+                    pass
+            compiled.append((pat, rx))
+        db.close()
+    except Exception:
+        logger.debug("Could not load knowledge-base patterns", exc_info=True)
+        compiled = []
+
+    _kb_compiled_cache = (compiled, cache_key)
+    return compiled
+
+
+def _reset_kb_cache() -> None:
+    """Clear the compiled-patterns cache (used by tests)."""
+    global _kb_compiled_cache
+    _kb_compiled_cache = None
+
+
+def check_knowledge_patterns(job: JobPosting, *, db_path: str = "") -> list[ScamSignal]:
+    """Match job text against all active knowledge-base patterns.
+
+    Returns a list of ScamSignal (one per matching pattern).
+    """
+    text = _full_text(job).lower()
+    compiled = _get_compiled_patterns(db_path=db_path)
+    signals: list[ScamSignal] = []
+
+    for pat, rx in compiled:
+        matched = False
+        evidence = ""
+
+        # Try regex first
+        if rx is not None:
+            m = rx.search(_full_text(job))
+            if m:
+                matched = True
+                evidence = m.group(0)
+
+        # Fall back to keyword matching (at least 2 keyword hits for a match)
+        if not matched and pat.keywords:
+            hits = [kw for kw in pat.keywords if kw.lower() in text]
+            if len(hits) >= 2:
+                matched = True
+                evidence = "; ".join(hits[:3])
+
+        if matched:
+            # Derive weight from the pattern's Bayesian score, with a floor
+            weight = max(0.55, pat.bayesian_score)
+            try:
+                category = pat.category if isinstance(pat.category, SignalCategory) else SignalCategory(pat.category)
+            except ValueError:
+                category = SignalCategory.RED_FLAG
+
+            signals.append(
+                ScamSignal(
+                    name=f"kb_{pat.pattern_id}",
+                    category=category,
+                    weight=weight,
+                    confidence=0.70,
+                    detail=f"Knowledge-base pattern: {pat.name}",
+                    evidence=evidence,
+                )
+            )
+
+    return signals
+
+
+# ---------------------------------------------------------------------------
+# New fraud type signals
+# ---------------------------------------------------------------------------
+
+_PIG_BUTCHERING = re.compile(
+    r"\b(cryptocurrency trader|digital asset (manager|analyst|trader)|"
+    r"DeFi (analyst|trader|specialist)|liquidity provider|"
+    r"investment opportunity.{0,60}(guaranteed|high) return|"
+    r"forex (trader|analyst|manager)|crypto exchange (analyst|specialist)|"
+    r"blockchain investment (analyst|manager))\b",
+    re.IGNORECASE,
+)
+
+
+def check_pig_butchering_job(job: JobPosting) -> ScamSignal | None:
+    """Detect pig butchering job scams -- fake crypto/investment roles."""
+    m = _PIG_BUTCHERING.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="pig_butchering_job",
+        category=SignalCategory.RED_FLAG,
+        weight=0.88,
+        confidence=0.80,
+        detail="Posting matches pig butchering scam pattern (fake crypto/investment role)",
+        evidence=m.group(0),
+    )
+
+
+_SURVEY_CLICKFARM = re.compile(
+    r"\b(online survey.{0,40}(earn|paid|money)|"
+    r"product reviewer.{0,40}(earn|paid|money|from home)|"
+    r"social media evaluator|"
+    r"paid per click|"
+    r"earn per review|"
+    r"get paid.{0,30}(surveys?|reviews?|clicks?)|"
+    r"review products.{0,30}(earn|paid|keep))\b",
+    re.IGNORECASE,
+)
+
+
+def check_survey_clickfarm(job: JobPosting) -> ScamSignal | None:
+    """Detect survey/click-farm scams."""
+    m = _SURVEY_CLICKFARM.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="survey_clickfarm",
+        category=SignalCategory.WARNING,
+        weight=0.75,
+        confidence=0.72,
+        detail="Posting matches survey/click-farm scam pattern",
+        evidence=m.group(0),
+    )
+
+
+_VISA_KEYWORDS = re.compile(
+    r"\b(guaranteed visa|guaranteed H-?1B|"
+    r"H-?1B sponsor.{0,40}(fee|payment|deposit|cost)|"
+    r"immigration fee|visa processing fee|"
+    r"work permit fee|visa (application|processing).{0,40}(pay|fee|cost|deposit))\b",
+    re.IGNORECASE,
+)
+
+
+def check_visa_sponsorship_scam(job: JobPosting) -> ScamSignal | None:
+    """Detect visa sponsorship scams charging upfront fees."""
+    m = _VISA_KEYWORDS.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="visa_sponsorship_scam",
+        category=SignalCategory.RED_FLAG,
+        weight=0.82,
+        confidence=0.78,
+        detail="Posting promises visa sponsorship with upfront fees -- legitimate employers never charge",
+        evidence=m.group(0),
+    )
+
+
+_GOVT_IMPERSONATION = re.compile(
+    r"\b(Department of Defense|DOD|FBI|CIA|DHS|NATO|"
+    r"Department of Homeland Security|NSA|Secret Service|"
+    r"Federal Bureau of Investigation|Central Intelligence Agency)\b",
+    re.IGNORECASE,
+)
+
+_PERSONAL_INFO_REQUEST_GOV = re.compile(
+    r"\b(provide (your )?(SSN|social security|passport|bank account|date of birth)|"
+    r"send (your )?(SSN|passport|bank|personal (info|information|details))|"
+    r"submit (your )?(personal|banking|financial) (info|information|details))\b",
+    re.IGNORECASE,
+)
+
+
+def check_government_impersonation(job: JobPosting) -> ScamSignal | None:
+    """Detect government/military impersonation scams."""
+    text = _full_text(job)
+    govt_m = _GOVT_IMPERSONATION.search(text)
+    if not govt_m:
+        return None
+    # Must also request personal info to trigger -- real govt jobs don't do this
+    info_m = _PERSONAL_INFO_REQUEST_GOV.search(text)
+    if not info_m:
+        return None
+    # Additional signal: no company LinkedIn or using personal email
+    has_company = bool(job.company_linkedin_url.strip())
+    weight = 0.88 if not has_company else 0.72
+    return ScamSignal(
+        name="government_impersonation",
+        category=SignalCategory.RED_FLAG,
+        weight=weight,
+        confidence=0.82,
+        detail=f"Posting claims government/military affiliation ({govt_m.group(0)}) while requesting personal info",
+        evidence=f"{govt_m.group(0)} + {info_m.group(0)}",
+    )
+
+
+_KNOWN_BRANDS = re.compile(
+    r"\b(Google|Amazon|Microsoft|Apple|Meta|Facebook|Netflix|Tesla|"
+    r"Goldman Sachs|JPMorgan|McKinsey|Deloitte|PwC|EY|KPMG|"
+    r"Coca.Cola|Nike|Disney|Boeing|Lockheed Martin|Raytheon)\b",
+    re.IGNORECASE,
+)
+
+
+def check_fake_staffing_agency(job: JobPosting) -> ScamSignal | None:
+    """Detect fake staffing agencies using well-known brand names."""
+    text = _full_text(job)
+    brand_m = _KNOWN_BRANDS.search(text)
+    if not brand_m:
+        return None
+    company = (job.company or "").strip().lower()
+    brand_lower = brand_m.group(0).lower()
+    # If the poster IS the brand, it is legitimate
+    if brand_lower in company:
+        return None
+    # Must also lack a company LinkedIn page
+    if job.company_linkedin_url.strip():
+        return None
+    return ScamSignal(
+        name="fake_staffing_agency",
+        category=SignalCategory.WARNING,
+        weight=0.68,
+        confidence=0.60,
+        detail=f"Posting references {brand_m.group(0)} but is posted by unknown '{job.company}' with no LinkedIn page",
+        evidence=f"brand={brand_m.group(0)}, poster={job.company}",
+    )
+
+
+_EVOLVED_MLM = re.compile(
+    r"\b(brand ambassador.{0,60}(earn|income|commission|own boss)|"
+    r"independent business owner|"
+    r"wellness consultant.{0,60}(earn|income|opportunity)|"
+    r"starter inventory|"
+    r"authorized distributor.{0,60}(earn|income|opportunity)|"
+    r"health and wellness.{0,40}(opportunity|income|earn)|"
+    r"purchase (your |a )?starter (kit|package|inventory))\b",
+    re.IGNORECASE,
+)
+
+
+def check_evolved_mlm(job: JobPosting) -> ScamSignal | None:
+    """Detect evolved MLM schemes using modern language."""
+    m = _EVOLVED_MLM.search(_full_text(job))
+    if not m:
+        return None
+    return ScamSignal(
+        name="evolved_mlm",
+        category=SignalCategory.RED_FLAG,
+        weight=0.78,
+        confidence=0.74,
+        detail="Posting uses evolved MLM language (brand ambassador, wellness consultant, starter inventory)",
+        evidence=m.group(0),
+    )
+
+
+_CONTACT_SUSPICIOUS = re.compile(
+    r"\b(apply (via|through|on|at) (telegram|whatsapp)|"
+    r"contact (us |me )?(on|via|at|through) (telegram|whatsapp)|"
+    r"(telegram|whatsapp) (only|to apply|for (details|info|more))|"
+    r"send (message|msg|text|DM) (on|via|to) (telegram|whatsapp))\b",
+    re.IGNORECASE,
+)
+
+_CELL_ONLY_CONTACT = re.compile(
+    r"\b(call|text|contact|reach) (me|us) (at|on) \(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
+    re.IGNORECASE,
+)
+
+
+def check_contact_channel_suspicious(job: JobPosting) -> ScamSignal | None:
+    """Detect suspicious contact channels (Telegram/WhatsApp only, personal cell)."""
+    text = _full_text(job)
+    m = _CONTACT_SUSPICIOUS.search(text)
+    if m:
+        return ScamSignal(
+            name="contact_channel_suspicious",
+            category=SignalCategory.WARNING,
+            weight=0.65,
+            confidence=0.68,
+            detail="Posting directs applicants to Telegram/WhatsApp for application",
+            evidence=m.group(0),
+        )
+    m = _CELL_ONLY_CONTACT.search(text)
+    if m and not job.company_linkedin_url.strip():
+        return ScamSignal(
+            name="contact_channel_suspicious",
+            category=SignalCategory.WARNING,
+            weight=0.55,
+            confidence=0.55,
+            detail="Sole contact method is a personal phone number with no company LinkedIn",
+            evidence=m.group(0),
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# New positive signals (reduce false positives)
+# ---------------------------------------------------------------------------
+
+_COMPANY_WEBSITE = re.compile(
+    r"\b(https?://)?([a-z0-9][-a-z0-9]*\.)+[a-z]{2,}\b",
+    re.IGNORECASE,
+)
+
+_ATS_SYSTEMS = re.compile(
+    r"\b(greenhouse|lever|workday|taleo|icims|smartrecruiters|"
+    r"brassring|jobvite|bamboohr|ashby|jazz ?hr|applicant tracking|"
+    r"apply (on|at|through|via) (our |the )?(careers?|jobs?) (page|portal|site|website)|"
+    r"careers?\.(company|com|org|io|co)|"
+    r"/careers?/|/jobs?/)\b",
+    re.IGNORECASE,
+)
+
+
+def check_verified_company_website(job: JobPosting) -> ScamSignal | None:
+    """Positive signal: company has a website matching the posting domain."""
+    text = _full_text(job)
+    company = (job.company or "").strip().lower()
+    if not company or len(company) < 3:
+        return None
+
+    # Look for URLs in the description
+    urls = _COMPANY_WEBSITE.findall(text)
+    if not urls:
+        return None
+
+    # Check if any URL contains the company name (simplified)
+    company_word = re.sub(r"[^a-z0-9]", "", company)
+    for url_parts in urls:
+        # url_parts is a tuple from findall groups; join and check
+        full = "".join(url_parts).lower()
+        if company_word in re.sub(r"[^a-z0-9]", "", full):
+            return ScamSignal(
+                name="verified_company_website",
+                category=SignalCategory.POSITIVE,
+                weight=0.32,
+                confidence=0.60,
+                detail=f"Posting references a website matching company name '{job.company}'",
+                evidence=full,
+            )
+    return None
+
+
+def check_professional_application_process(job: JobPosting) -> ScamSignal | None:
+    """Positive signal: company uses a professional ATS or careers page."""
+    text = _full_text(job)
+    m = _ATS_SYSTEMS.search(text)
+    if not m:
+        return None
+    return ScamSignal(
+        name="professional_application_process",
+        category=SignalCategory.POSITIVE,
+        weight=0.30,
+        confidence=0.62,
+        detail="Posting references a professional application process (ATS or company careers page)",
+        evidence=m.group(0),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Known scam entity detection helpers
+# ---------------------------------------------------------------------------
+
+def _levenshtein(a: str, b: str) -> int:
+    """Compute Levenshtein edit distance between two strings (iterative, O(n*m))."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        curr = [i]
+        for j, cb in enumerate(b, 1):
+            curr.append(min(
+                prev[j] + 1,       # deletion
+                curr[j - 1] + 1,   # insertion
+                prev[j - 1] + (ca != cb),  # substitution
+            ))
+        prev = curr
+    return prev[-1]
+
+
+def _fuzzy_scam_match(name: str, scam_names: list[str], threshold: int = 3) -> str | None:
+    """Return the closest scam name within *threshold* edits, or None."""
+    name_lower = name.lower()
+    best_name: str | None = None
+    best_dist = threshold + 1
+    for sname in scam_names:
+        dist = _levenshtein(name_lower, sname.lower())
+        if dist <= threshold and dist < best_dist:
+            best_dist = dist
+            best_name = sname
+    return best_name
+
+
+@lru_cache(maxsize=4)
+def _load_scam_entity_names() -> list[str]:
+    """Load all non-empty scam entity names from DB (cached per process)."""
+    try:
+        from sentinel.db import SentinelDB
+        with SentinelDB() as db:
+            entities = db.get_scam_entities()
+        return [e["name"] for e in entities if e.get("name")]
+    except Exception:
+        return []
+
+
+@lru_cache(maxsize=4)
+def _load_scam_domains() -> set[str]:
+    """Load all non-empty scam domains from DB (cached per process)."""
+    try:
+        from sentinel.db import SentinelDB
+        with SentinelDB() as db:
+            entities = db.get_scam_entities()
+        return {e["domain"].lower() for e in entities if e.get("domain")}
+    except Exception:
+        return set()
+
+
+def _extract_domain(text: str) -> str | None:
+    """Extract a bare domain (e.g. 'amazon-jobs.net') from text, or None."""
+    m = re.search(
+        r"(?:https?://)?(?:www\.)?([a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9\-]+)+)",
+        text,
+    )
+    if m:
+        return m.group(1).lower()
+    return None
+
+
+def check_known_scam_entity(job: JobPosting) -> ScamSignal | None:
+    """Check company name and domain against the known scam entity database.
+
+    Performs:
+    1. Exact name match (case-insensitive) against scam_entities
+    2. Exact domain match against scam_entities
+    3. Fuzzy name match (Levenshtein ≤ 3) against all scam entity names
+    """
+    company = (job.company or "").strip()
+    full_text = _full_text(job)
+
+    # 1. Exact name match
+    if company:
+        try:
+            from sentinel.db import SentinelDB
+            with SentinelDB() as db:
+                if db.is_known_scam_entity(name=company):
+                    return ScamSignal(
+                        name="known_scam_entity",
+                        category=SignalCategory.RED_FLAG,
+                        weight=0.92,
+                        confidence=0.90,
+                        detail=f"Company '{company}' matches a known scam entity in the database",
+                        evidence=company,
+                    )
+        except Exception:
+            pass
+
+    # 2. Domain match — check company name and any URL in the posting
+    scam_domains = _load_scam_domains()
+    if scam_domains:
+        domain_candidate = _extract_domain(full_text)
+        if domain_candidate and domain_candidate in scam_domains:
+            return ScamSignal(
+                name="known_scam_entity",
+                category=SignalCategory.RED_FLAG,
+                weight=0.92,
+                confidence=0.88,
+                detail=f"Domain '{domain_candidate}' matches a known scam domain",
+                evidence=domain_candidate,
+            )
+
+    # 3. Fuzzy match on company name
+    if company:
+        scam_names = _load_scam_entity_names()
+        match = _fuzzy_scam_match(company, scam_names, threshold=3)
+        if match:
+            return ScamSignal(
+                name="known_scam_entity",
+                category=SignalCategory.RED_FLAG,
+                weight=0.80,
+                confidence=0.70,
+                detail=f"Company name '{company}' is suspiciously similar to known scam entity '{match}'",
+                evidence=f"{company} ≈ {match}",
+            )
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Registry + runner
 # ---------------------------------------------------------------------------
 
@@ -762,9 +1542,13 @@ ALL_SIGNALS = [
     check_urgency_language,
     check_wfh_unrealistic_pay,
     check_low_recruiter_connections,
+    check_new_recruiter_account,
     # Ghost job
     check_stale_posting,
     check_repost_pattern,
+    check_talent_pool_language,
+    check_high_applicant_count,
+    check_role_title_generic,
     # Structural
     check_grammar_quality,
     check_suspicious_links,
@@ -772,6 +1556,8 @@ ALL_SIGNALS = [
     # Positive
     check_established_company,
     check_detailed_requirements,
+    check_verified_company_website,
+    check_professional_application_process,
     # AI-informed scam detection
     check_phone_anomaly,
     check_interview_bypass,
@@ -780,13 +1566,71 @@ ALL_SIGNALS = [
     check_data_harvesting,
     check_compensation_red_flags,
     check_company_name_suspicious,
+    check_known_scam_entity,
+    # New fraud type signals
+    check_pig_butchering_job,
+    check_survey_clickfarm,
+    check_visa_sponsorship_scam,
+    check_government_impersonation,
+    check_fake_staffing_agency,
+    check_evolved_mlm,
+    check_contact_channel_suspicious,
+]
+
+# Signals that require a db argument — called separately in extract_signals_with_db
+DB_SIGNALS = [
+    check_high_posting_velocity,
+    check_cross_posting_duplicate,
 ]
 
 
 def extract_signals(job: JobPosting) -> list[ScamSignal]:
+    """Run all stateless signals against a job posting.
+
+    Applies TextNormalizer before extraction so that Unicode confusables,
+    leetspeak, zero-width chars, and homoglyphs are resolved first.
+    Evasion signals (``evasion_attempt``, ``unicode_anomaly``,
+    ``misspelled_scam_keyword``) are appended if obfuscation is detected.
+    """
+    # --- Normalization pass -------------------------------------------
+    raw_text = _full_text(job)
+    normalized_text = _NORMALIZER.normalize(raw_text)
+
+    if normalized_text != raw_text:
+        # Rebuild a normalized copy of the job for pattern matching.
+        # We only override description and title so other fields stay intact.
+        norm_desc = _NORMALIZER.normalize(job.description)
+        norm_title = _NORMALIZER.normalize(job.title)
+        from dataclasses import replace as _dc_replace
+        job = _dc_replace(job, description=norm_desc, title=norm_title)
+
+    # --- Standard signal extraction on (possibly normalized) job ------
     signals: list[ScamSignal] = []
     for check_fn in ALL_SIGNALS:
         signal = check_fn(job)
+        if signal is not None:
+            signals.append(signal)
+
+    # --- Evasion detection on the *original* vs normalized text -------
+    evasion_signals = _EVASION_DETECTOR.detect_evasion_attempts(raw_text, normalized_text)
+    signals.extend(evasion_signals)
+
+    return signals
+
+
+def extract_signals_with_kb(job: JobPosting, *, db_path: str = "") -> list[ScamSignal]:
+    """Run all stateless signals plus knowledge-base pattern matching."""
+    signals = extract_signals(job)
+    kb_signals = check_knowledge_patterns(job, db_path=db_path)
+    signals.extend(kb_signals)
+    return signals
+
+
+def extract_signals_with_db(job: JobPosting, db) -> list[ScamSignal]:
+    """Run all signals, including DB-backed velocity/dedup checks."""
+    signals = extract_signals(job)
+    for check_fn in DB_SIGNALS:
+        signal = check_fn(job, db=db)
         if signal is not None:
             signals.append(signal)
     return signals

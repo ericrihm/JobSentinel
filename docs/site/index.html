@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="JobSentinel — AI-powered job scam detection with 40+ signals. Protect yourself from fraudulent job postings on LinkedIn, Indeed, and more." />
+  <meta property="og:title" content="JobSentinel — AI-Powered Job Scam Detection" />
+  <meta property="og:description" content="Protect yourself from fraudulent job postings with 40+ detection signals, Bayesian scoring, and real-time analysis." />
+  <meta property="og:url" content="https://jobsentinel.org" />
+  <meta property="og:type" content="website" />
+  <title>JobSentinel — AI-Powered Job Scam Detection</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f6feb'/><text y='22' x='5' font-size='20'>🛡</text></svg>" />
+</head>
+<body>
+
+<!-- ============================================================
+     NAV
+     ============================================================ -->
+<nav>
+  <div class="container nav-inner">
+    <a href="#hero" class="nav-logo" aria-label="JobSentinel home">
+      <span class="nav-logo-icon">🛡</span>
+      <span>JobSentinel</span>
+    </a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#demo">Live Demo</a></li>
+      <li><a href="#signals">Signals</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="#demo" class="nav-cta">Try Demo</a></li>
+    </ul>
+    <button class="nav-mobile-toggle" aria-label="Toggle menu" aria-expanded="false">☰</button>
+  </div>
+</nav>
+
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<section id="hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <div class="container">
+    <div class="hero-eyebrow fade-up">
+      <span class="badge badge-accent">Open Source · MIT License</span>
+    </div>
+    <h1 class="hero-title fade-up delay-1">
+      AI-Powered<br>Job Scam Detection
+    </h1>
+    <p class="hero-tagline fade-up delay-2">
+      Protect yourself from fraudulent job postings with 40+ detection signals,
+      Bayesian scoring, and real-time analysis across every major job platform.
+    </p>
+    <div class="hero-actions fade-up delay-3">
+      <a href="#demo" class="btn btn-primary">🔍 Try the Live Demo</a>
+      <a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener" class="btn btn-secondary">⭐ Star on GitHub</a>
+    </div>
+    <div class="fade-up delay-3">
+      <div class="hero-code">
+        <div><span class="prompt">$</span> <span class="cmd">pip install sentinel</span></div>
+        <div style="margin-top:8px"><span class="prompt">$</span> <span class="cmd">sentinel scan "https://linkedin.com/jobs/view/..."</span></div>
+        <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+          <span class="out">✓ Score: 78/100 — HIGH RISK</span><br>
+          <span class="cmt">  ↳ 6 signals triggered: upfront_payment, ssn_requested, ...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     HOW IT WORKS
+     ============================================================ -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>How It Works</h2>
+      <p>Three steps from suspicious URL to actionable safety score — in milliseconds.</p>
+    </div>
+    <div class="steps">
+      <div class="step-card reveal">
+        <span class="step-num">1</span>
+        <span class="step-icon">📋</span>
+        <h3>Paste the URL or Text</h3>
+        <p>Drop in any job posting URL or paste the description directly. Supports LinkedIn, Indeed, RemoteOK, USAJobs, Remotive, and plain text.</p>
+      </div>
+      <div class="step-card reveal">
+        <span class="step-num">2</span>
+        <span class="step-icon">🧠</span>
+        <h3>AI Multi-Signal Analysis</h3>
+        <p>40+ signals fire in parallel — regex patterns catch red flags in under 10ms, while NLP models analyze sentiment, structure, and linguistic cues.</p>
+      </div>
+      <div class="step-card reveal">
+        <span class="step-num">3</span>
+        <span class="step-icon">📊</span>
+        <h3>Get Your Safety Score</h3>
+        <p>A Bayesian confidence score from 0–100 with a full signal breakdown, category weights, and actionable guidance on what to investigate.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FEATURES
+     ============================================================ -->
+<section id="features">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Built for Real Protection</h2>
+      <p>Every design decision prioritizes accuracy — because false positives cost people jobs, and false negatives cost people money.</p>
+    </div>
+    <div class="features-grid">
+
+      <div class="feature-card reveal">
+        <span class="feature-icon">🔬</span>
+        <h3>Multi-Signal Analysis</h3>
+        <p>40+ independent signals spanning red flags, structural patterns, ghost job indicators, linguistic markers, and positive trust signals — each calibrated against a dataset of 1,500+ real postings.</p>
+      </div>
+
+      <div class="feature-card reveal">
+        <span class="feature-icon">📈</span>
+        <h3>Bayesian Scoring</h3>
+        <p>Confidence grows with accumulated evidence rather than binary rules. Multiple weak signals compound correctly, and contradictory positive signals reduce false alarms — just like a trained investigator would reason.</p>
+      </div>
+
+      <div class="feature-card reveal">
+        <span class="feature-icon">🔄</span>
+        <h3>Self-Improving</h3>
+        <p>Adaptive learning continuously updates detection weights based on user-reported outcomes. Scam tactics that evade today's detectors get caught faster tomorrow as the model adapts.</p>
+      </div>
+
+      <div class="feature-card reveal">
+        <span class="feature-icon">⚡</span>
+        <h3>Real-Time Detection</h3>
+        <p>Regex-based signals complete in under 10ms per posting, making it viable to scan hundreds of listings during a job search session without perceptible delay.</p>
+      </div>
+
+      <div class="feature-card reveal">
+        <span class="feature-icon">🌐</span>
+        <h3>Multi-Source Coverage</h3>
+        <p>Native scrapers for LinkedIn, RemoteOK, Indeed, USAJobs, and Remotive — with a generic extractor that handles any URL. Job boards update their HTML; our adapters stay current.</p>
+      </div>
+
+      <div class="feature-card reveal">
+        <span class="feature-icon">🔌</span>
+        <h3>Browser Extension</h3>
+        <p>Analyze postings inline as you browse. Risk badges appear directly on job listing cards — no copy-paste needed. Works on Chrome, Firefox, and Edge.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     LIVE DEMO
+     ============================================================ -->
+<section id="demo">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Live Demo</h2>
+      <p>Paste a job description below and get an instant client-side scam analysis. No data is sent to any server.</p>
+    </div>
+
+    <div class="demo-wrapper reveal">
+      <div class="demo-input-area">
+        <div class="demo-toolbar">
+          <div class="demo-toolbar-dots">
+            <span class="dot-red"></span>
+            <span class="dot-yellow"></span>
+            <span class="dot-green"></span>
+          </div>
+          <span class="demo-toolbar-label">job-description.txt — JobSentinel Analyzer</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-secondary" onclick="loadSample('scam')" style="padding:4px 12px;font-size:.75rem">Load Scam Example</button>
+            <button class="btn btn-sm btn-secondary" onclick="loadSample('safe')" style="padding:4px 12px;font-size:.75rem">Load Safe Example</button>
+          </div>
+        </div>
+        <textarea
+          id="jobInput"
+          placeholder="Paste a job description here to analyze it for scam signals...
+
+Example red flags to look for:
+• Guaranteed income claims
+• Upfront fees or equipment purchases
+• Requests for SSN or bank info early on
+• Reshipping / package handling roles
+• Urgency tactics ('act now', 'limited spots')"
+          spellcheck="false"
+          aria-label="Job description input"
+        ></textarea>
+        <div class="demo-actions">
+          <button class="btn btn-primary" onclick="analyzeJob()">🔍 Analyze for Scams</button>
+          <button class="btn btn-secondary" onclick="clearDemo()">✕ Clear</button>
+          <a href="demo.html" class="btn btn-secondary" style="margin-left:auto">Full Demo →</a>
+        </div>
+      </div>
+
+      <div id="demoResult" role="region" aria-live="polite" aria-label="Analysis results"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SIGNAL CATEGORIES
+     ============================================================ -->
+<section id="signals">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Signal Categories</h2>
+      <p>Every signal is hand-crafted, independently weighted, and continuously validated against known scam patterns.</p>
+    </div>
+
+    <div class="accordion reveal">
+
+      <div class="accordion-item">
+        <button class="accordion-header" aria-expanded="false">
+          <div class="accordion-title">
+            <span class="accordion-icon">🚨</span>
+            <span>Red Flags</span>
+            <span class="accordion-count">14 signals</span>
+          </div>
+          <span class="accordion-chevron">▾</span>
+        </button>
+        <div class="accordion-body">
+          <div class="accordion-content">
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Upfront payment required</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>SSN / banking info requested</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Guaranteed income claims</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Check cashing scheme</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>MLM / pyramid structure</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>High-pressure urgency tactics</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Excessive personal info demand</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Impersonation of known brands</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>No company name or address</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Fake recruiter contact</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Wire transfer / money order</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Interview via text only</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Request for gift cards</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--red)"></span>Fake government job offer</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <button class="accordion-header" aria-expanded="false">
+          <div class="accordion-title">
+            <span class="accordion-icon">⚠️</span>
+            <span>Warnings</span>
+            <span class="accordion-count">12 signals</span>
+          </div>
+          <span class="accordion-chevron">▾</span>
+        </button>
+        <div class="accordion-body">
+          <div class="accordion-content">
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Vague company description</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Unusually high salary claim</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Grammar and spelling errors</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Reshipping / package handling</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Cryptocurrency payment</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Generic job description</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Mismatched domain / email</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>No physical address</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Immediate hire offer</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Mystery shopper role</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>No formal application</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--orange)"></span>Copied posting text</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <button class="accordion-header" aria-expanded="false">
+          <div class="accordion-title">
+            <span class="accordion-icon">👻</span>
+            <span>Ghost Jobs</span>
+            <span class="accordion-count">7 signals</span>
+          </div>
+          <span class="accordion-chevron">▾</span>
+        </button>
+        <div class="accordion-body">
+          <div class="accordion-content">
+            <div class="signal-tag"><span class="dot" style="background:var(--yellow)"></span>Perpetually open role</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--yellow)"></span>No contact information</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--yellow)"></span>Posting age anomaly</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--yellow)"></span>Candidate pool building</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--yellow)"></span>No hiring manager listed</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--yellow)"></span>Duplicated across cities</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--yellow)"></span>Non-existent department</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <button class="accordion-header" aria-expanded="false">
+          <div class="accordion-title">
+            <span class="accordion-icon">🔩</span>
+            <span>Structural</span>
+            <span class="accordion-count">5 signals</span>
+          </div>
+          <span class="accordion-chevron">▾</span>
+        </button>
+        <div class="accordion-body">
+          <div class="accordion-content">
+            <div class="signal-tag"><span class="dot" style="background:var(--accent)"></span>No qualifications listed</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--accent)"></span>Missing salary range</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--accent)"></span>Zero responsibilities listed</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--accent)"></span>Unusually short description</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--accent)"></span>No job title clarity</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item">
+        <button class="accordion-header" aria-expanded="false">
+          <div class="accordion-title">
+            <span class="accordion-icon">✅</span>
+            <span>Positive Signals</span>
+            <span class="accordion-count">8 signals</span>
+          </div>
+          <span class="accordion-chevron">▾</span>
+        </button>
+        <div class="accordion-body">
+          <div class="accordion-content">
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>Detailed company info</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>Structured interview process</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>Legitimate benefits listed</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>Verified employer badge</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>Clear salary range</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>LinkedIn profile linked</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>ATS / careers portal link</div>
+            <div class="signal-tag"><span class="dot" style="background:var(--green)"></span>Named hiring manager</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     STATISTICS
+     ============================================================ -->
+<section id="statistics">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>By the Numbers</h2>
+      <p>Built with rigor, tested against reality.</p>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card reveal">
+        <div class="stat-num" data-target="40+">0</div>
+        <div class="stat-label">Detection Signals</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-num" data-target="5">0</div>
+        <div class="stat-label">Signal Categories</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-num" data-target="1500+">0</div>
+        <div class="stat-label">Test Cases Validated</div>
+      </div>
+      <div class="stat-card reveal">
+        <div class="stat-num" data-target="&lt;10ms">&lt;10ms</div>
+        <div class="stat-label">Detection Latency</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     INSTALLATION
+     ============================================================ -->
+<section id="install">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Get Started in Seconds</h2>
+      <p>Installable via pip. Works as a CLI, Python library, or REST API.</p>
+    </div>
+
+    <div class="install-grid">
+
+      <div class="reveal">
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">Installation</span>
+            <button class="copy-btn" aria-label="Copy installation command">Copy</button>
+          </div>
+          <pre><span class="pmt">$</span> pip install sentinel
+
+<span class="cmt"># or install from source</span>
+<span class="pmt">$</span> git clone https://github.com/ericrihm/JobSentinel
+<span class="pmt">$</span> cd JobSentinel &amp;&amp; pip install -e .</pre>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">CLI Usage</span>
+            <button class="copy-btn" aria-label="Copy CLI examples">Copy</button>
+          </div>
+          <pre><span class="cmt"># Scan a single URL</span>
+<span class="pmt">$</span> sentinel scan "https://linkedin.com/jobs/view/..."
+
+<span class="cmt"># Analyze a text file</span>
+<span class="pmt">$</span> sentinel analyze posting.txt
+
+<span class="cmt"># Batch scan from a list</span>
+<span class="pmt">$</span> sentinel batch urls.txt --output results.json</pre>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">Python API</span>
+            <button class="copy-btn" aria-label="Copy Python example">Copy</button>
+          </div>
+          <pre><span class="kw">from</span> sentinel <span class="kw">import</span> Sentinel
+
+s = Sentinel()
+result = s.analyze(url=<span class="str">"https://..."</span>)
+
+<span class="kw">print</span>(result.score)        <span class="cmt"># 78</span>
+<span class="kw">print</span>(result.verdict)      <span class="cmt"># HIGH_RISK</span>
+<span class="kw">print</span>(result.signals)      <span class="cmt"># [...signals...]</span></pre>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <div class="code-block">
+          <div class="code-block-header">
+            <span class="code-block-title">Sample Output</span>
+            <button class="copy-btn" aria-label="Copy sample output">Copy</button>
+          </div>
+          <pre><span class="ok">✓ JobSentinel v0.9.0</span>
+  Analyzing: linkedin.com/jobs/view/...
+
+  Score:   <span class="err">78 / 100 (HIGH RISK)</span>
+  Signals: 6 triggered
+
+  <span class="err">● upfront_payment    (+35)</span>
+  <span class="err">● ssn_early          (+40)</span>
+  <span class="err">● urgency_pressure   (+22)</span>
+  <span class="ok">✓ structured_process (-12)</span></pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     OPEN SOURCE
+     ============================================================ -->
+<section id="open-source">
+  <div class="container">
+    <div class="section-header reveal">
+      <h2>Open Source</h2>
+      <p>MIT licensed. Built in the open, improved by the community.</p>
+    </div>
+
+    <div class="oss-grid">
+      <div class="oss-card reveal">
+        <span class="oss-icon">📜</span>
+        <h3>MIT License</h3>
+        <p>Use it, fork it, embed it in your product. No strings attached.</p>
+        <a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">View License</a>
+      </div>
+      <div class="oss-card reveal">
+        <span class="oss-icon">🤝</span>
+        <h3>Contributions Welcome</h3>
+        <p>Add new signals, improve scrapers, report false positives. See CONTRIBUTING.md to get started.</p>
+        <a href="https://github.com/ericrihm/JobSentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">Contribute</a>
+      </div>
+      <div class="oss-card reveal">
+        <span class="oss-icon">🐛</span>
+        <h3>Report Issues</h3>
+        <p>Found a missed scam pattern or a false positive? Open an issue with the posting (redacted) and we'll fix it.</p>
+        <a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">Open Issue</a>
+      </div>
+    </div>
+
+    <div class="reveal" style="text-align:center">
+      <a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener" class="github-link">
+        <span class="gh-icon">⭐</span>
+        <span>ericrihm/JobSentinel on GitHub</span>
+        <span style="color:var(--muted);font-size:.85rem;font-weight:400">→</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FOOTER
+     ============================================================ -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <h3>🛡 JobSentinel</h3>
+        <p>AI-powered job scam detection. Free, open source, and constantly improving. Built to protect job seekers.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#how-it-works">How It Works</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#demo">Live Demo</a></li>
+          <li><a href="demo.html">Extended Demo</a></li>
+          <li><a href="#install">Installation</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/README.md" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/issues" target="_blank" rel="noopener">Issue Tracker</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/releases" target="_blank" rel="noopener">Changelog</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://github.com/ericrihm/JobSentinel/discussions" target="_blank" rel="noopener">Discussions</a></li>
+          <li><a href="https://github.com/ericrihm/JobSentinel/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+          <li><a href="https://jobsentinel.org" target="_blank" rel="noopener">jobsentinel.org</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>© 2025 JobSentinel. Released under the MIT License.</p>
+      <div class="footer-badges">
+        <span class="badge badge-green">Open Source</span>
+        <span class="badge badge-accent">MIT License</span>
+        <span class="badge badge-accent">v0.9.0</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

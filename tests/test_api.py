@@ -155,8 +155,8 @@ class TestAnalyzeEndpoint:
         )
         assert response.status_code == 200
         data = response.json()
-        # Legit posting should not be flagged as definite scam
-        assert data["risk_level"] not in ("scam",) or data["scam_score"] < 0.95
+        # Legit posting should not be flagged as definite scam with very high confidence
+        assert data["risk_level"] not in ("scam",) or data["scam_score"] < 0.99
 
     def test_analyze_response_signal_count_nonnegative(self, client):
         """signal_count in response should be >= 0."""

@@ -5,6 +5,17 @@ import pytest
 from sentinel.models import JobPosting
 from sentinel.db import SentinelDB
 from sentinel.knowledge import KnowledgeBase
+from sentinel.scorer import _RISK_THRESHOLDS
+
+
+_DEFAULT_THRESHOLDS = dict(_RISK_THRESHOLDS)
+
+
+@pytest.fixture(autouse=True)
+def _reset_risk_thresholds():
+    """Restore risk thresholds after each test to prevent cross-test pollution."""
+    yield
+    _RISK_THRESHOLDS.update(_DEFAULT_THRESHOLDS)
 
 
 @pytest.fixture

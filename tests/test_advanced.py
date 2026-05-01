@@ -1,4 +1,4 @@
-"""Advanced tests for new Sentinel modules: signals (AI-informed), ecosystem, innovation."""
+"""Advanced tests for new Sentinel modules: signals (AI-informed), plugins, innovation."""
 
 import json
 import random
@@ -359,6 +359,15 @@ class TestCompanyNameSuspicious:
 # ===========================================================================
 
 
+_has_ecosystem = False
+try:
+    import sentinel.ecosystem
+    _has_ecosystem = True
+except ImportError:
+    pass
+
+
+@pytest.mark.skipif(not _has_ecosystem, reason="ecosystem plugin not installed")
 class TestEcosystem:
     def test_publish_observation_writes_to_jsonl(self, tmp_path, monkeypatch):
         """publish_observation appends a valid JSON line to the observations file."""
@@ -501,13 +510,13 @@ class TestInnovationEngineCore:
     def test_run_cycle_returns_results_list(self, tmp_path, monkeypatch):
         """run_cycle returns a non-empty list of ImprovementResult objects."""
         from sentinel.innovation import ImprovementResult
-        import sentinel.ecosystem as eco
 
-        # Monkeypatch ecosystem writes to avoid touching home dir
-        obs_path = tmp_path / "obs.jsonl"
-        events_path = tmp_path / "events.jsonl"
-        monkeypatch.setattr(eco, "OBSERVATIONS_PATH", obs_path)
-        monkeypatch.setattr(eco, "EVENTS_PATH", events_path)
+        if _has_ecosystem:
+            import sentinel.ecosystem as eco
+            obs_path = tmp_path / "obs.jsonl"
+            events_path = tmp_path / "events.jsonl"
+            monkeypatch.setattr(eco, "OBSERVATIONS_PATH", obs_path)
+            monkeypatch.setattr(eco, "EVENTS_PATH", events_path)
 
         engine, db = self._make_engine(tmp_path)
         results = engine.run_cycle(max_strategies=2)
@@ -589,12 +598,12 @@ class TestInnovationEngineCore:
 
     def test_total_cycles_increments_after_run(self, tmp_path, monkeypatch):
         """total_cycles in get_report reflects the sum of all arm attempts."""
-        import sentinel.ecosystem as eco
-
-        obs_path = tmp_path / "obs.jsonl"
-        events_path = tmp_path / "events.jsonl"
-        monkeypatch.setattr(eco, "OBSERVATIONS_PATH", obs_path)
-        monkeypatch.setattr(eco, "EVENTS_PATH", events_path)
+        if _has_ecosystem:
+            import sentinel.ecosystem as eco
+            obs_path = tmp_path / "obs.jsonl"
+            events_path = tmp_path / "events.jsonl"
+            monkeypatch.setattr(eco, "OBSERVATIONS_PATH", obs_path)
+            monkeypatch.setattr(eco, "EVENTS_PATH", events_path)
 
         engine, db = self._make_engine(tmp_path)
         before = engine.get_report()["total_cycles"]

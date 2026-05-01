@@ -456,4 +456,263 @@ def create_app():  # noqa: C901
             "checked_at": health.get("checked_at", ""),
         }
 
+    # -----------------------------------------------------------------------
+    # POST /api/deep-analyze
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/deep-analyze", summary="Full nexus deep analysis")
+    def deep_analyze_endpoint(req: AnalyzeRequest) -> Any:
+        """Run a deep analysis using Nexus if available, otherwise falls back to standard analysis."""
+        if not req.text and not req.url and not req.job_data:
+            raise HTTPException(
+                status_code=422,
+                detail="Provide at least one of: text, url, or job_data.",
+            )
+
+        # Try Nexus first
+        try:
+            from sentinel.nexus import Nexus  # type: ignore[import]
+            nexus = Nexus()
+            input_str = req.url or req.text or str(req.job_data)
+            result = nexus.deep_analyze(input_str)
+            return result if isinstance(result, dict) else vars(result)
+        except (ImportError, AttributeError):
+            pass
+        except Exception as exc:
+            logger.warning("Nexus deep_analyze failed, falling back: %s", exc)
+
+        # Fall back to standard analysis
+        try:
+            from sentinel.analyzer import analyze_job, analyze_text, analyze_url
+            from sentinel.scanner import parse_job_json
+
+            if req.url:
+                result = analyze_url(req.url)
+            elif req.job_data:
+                job = parse_job_json(req.job_data)
+                result = analyze_job(job, use_ai=req.use_ai)
+            else:
+                result = analyze_text(req.text or "", title=req.title, company=req.company)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
+
+        return {**result.to_dict(), "nexus_available": False}
+
+    # -----------------------------------------------------------------------
+    # GET /api/health/autonomic
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/health/autonomic", summary="Autonomic system health dashboard")
+    def autonomic_health_endpoint() -> Any:
+        """Return a full health dashboard from the autonomic controller."""
+        try:
+            from sentinel.autonomic import AutonomicController  # type: ignore[import]
+        except ImportError:
+            raise HTTPException(status_code=501, detail="autonomic module not available")
+
+        try:
+            controller = AutonomicController()
+            status = controller.get_status()
+            dashboard = controller.dashboard.snapshot()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Health check failed: {exc}") from exc
+
+        return {"status": status, "dashboard": dashboard}
+
+    # -----------------------------------------------------------------------
+    # GET /api/temporal/trends
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/temporal/trends", summary="Scam evolution trends")
+    def temporal_trends_endpoint() -> Any:
+        """Return scam pattern lifecycle and evolution trend data."""
+        try:
+            from sentinel.temporal import ScamEvolutionTracker  # type: ignore[import]
+        except ImportError:
+            raise HTTPException(status_code=501, detail="temporal module not available")
+
+        try:
+            from sentinel.db import SentinelDB
+            db = SentinelDB()
+            tracker = ScamEvolutionTracker(db=db)
+            lifecycles = tracker.all_lifecycles()
+            db.close()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Temporal trends failed: {exc}") from exc
+
+        data = {
+            name: {
+                "status": lc.status,
+                "ema_rate": round(lc.ema_rate, 4),
+                "trend": round(lc.trend, 4),
+                "peak_rate": round(lc.peak_rate, 4),
+                "first_seen": lc.first_seen,
+                "last_seen": lc.last_seen,
+            }
+            for name, lc in lifecycles.items()
+        }
+        return {"trends": data, "count": len(data)}
+
+    # -----------------------------------------------------------------------
+    # GET /api/temporal/predict
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/temporal/predict", summary="Next-week scam volume predictions")
+    def temporal_predict_endpoint() -> Any:
+        """Return next-week scam volume predictions from the PredictiveModel."""
+        try:
+            from sentinel.temporal import PredictiveModel  # type: ignore[import]
+        except ImportError:
+            raise HTTPException(status_code=501, detail="temporal module not available")
+
+        try:
+            model = PredictiveModel()
+            prediction = model.predict_next_week()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}") from exc
+
+        return {
+            "week": prediction.week_key,
+            "predicted_volume": prediction.predicted_volume,
+            "lower_bound": prediction.lower_bound,
+            "upper_bound": prediction.upper_bound,
+            "confidence": prediction.confidence,
+            "method": prediction.method,
+        }
+
+    # -----------------------------------------------------------------------
+    # POST /api/llm-check
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/llm-check", summary="Check if text is LLM-generated")
+    def llm_check_endpoint(req: AnalyzeRequest) -> Any:
+        """Detect whether the provided text was generated by an LLM."""
+        try:
+            from sentinel.llm_detect import LLMDetector  # type: ignore[import]
+        except ImportError:
+            raise HTTPException(status_code=501, detail="llm_detect module not available")
+
+        text = req.text or ""
+        if not text:
+            raise HTTPException(status_code=422, detail="Provide text for LLM detection.")
+
+        try:
+            detector = LLMDetector()
+            result = detector.detect(text)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"LLM detection failed: {exc}") from exc
+
+        return {
+            "is_llm_generated": result.is_llm_generated,
+            "score": round(result.score, 4),
+            "confidence": round(result.confidence, 4),
+            "signals": result.signals,
+        }
+
+    # -----------------------------------------------------------------------
+    # POST /api/econ-check
+    # -----------------------------------------------------------------------
+
+    @app.post("/api/econ-check", summary="Run economic validation on a job posting")
+    def econ_check_endpoint(req: AnalyzeRequest) -> Any:
+        """Validate economic plausibility of salary, benefits, and geography."""
+        try:
+            from sentinel.economics import validate_economics  # type: ignore[import]
+            from sentinel.models import JobPosting
+        except ImportError:
+            raise HTTPException(status_code=501, detail="economics module not available")
+
+        text = req.text or ""
+        try:
+            job = JobPosting(
+                title=req.title,
+                company=req.company,
+                description=text,
+                url=req.url or "",
+            )
+            result = validate_economics(job)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Economic validation failed: {exc}") from exc
+
+        out: dict[str, Any] = {
+            "overall_suspicious": result.is_suspicious,
+            "overall_score": round(result.suspicion_score, 4),
+            "flags": result.flags,
+        }
+        if result.salary:
+            out["salary"] = {"suspicious": result.salary.is_suspicious, "flags": result.salary.flags}
+        if result.geography:
+            out["geography"] = {"suspicious": result.geography.is_suspicious, "flags": result.geography.flags}
+        if result.benefits:
+            out["benefits"] = {"suspicious": result.benefits.is_suspicious, "flags": result.benefits.flags}
+        return out
+
+    # -----------------------------------------------------------------------
+    # GET /api/network/clusters
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/network/clusters", summary="Scam network clusters")
+    def network_clusters_endpoint() -> Any:
+        """Return detected scam network clusters from the graph module."""
+        try:
+            from sentinel.graph import ScamNetworkGraph  # type: ignore[import]
+        except ImportError:
+            raise HTTPException(status_code=501, detail="graph module not available")
+
+        try:
+            graph = ScamNetworkGraph()
+            clusters = graph.get_clusters()
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Network analysis failed: {exc}") from exc
+
+        data = [
+            {
+                "cluster_id": c.cluster_id,
+                "size": c.size,
+                "avg_scam_score": round(c.avg_scam_score, 3),
+                "common_signals": c.common_signals,
+            }
+            for c in clusters
+        ]
+        return {"clusters": data, "count": len(data)}
+
+    # -----------------------------------------------------------------------
+    # GET /api/brain
+    # -----------------------------------------------------------------------
+
+    @app.get("/api/brain", summary="Full nexus/brain dashboard")
+    def brain_endpoint() -> Any:
+        """Return the full Nexus dashboard state plus health and stats."""
+        nexus_data: dict = {}
+        try:
+            from sentinel.nexus import Nexus  # type: ignore[import]
+            nexus = Nexus()
+            if hasattr(nexus, "get_dashboard"):
+                nexus_data = nexus.get_dashboard()
+        except (ImportError, AttributeError, Exception) as exc:
+            logger.debug("Nexus unavailable for /api/brain: %s", exc)
+
+        health_data: dict = {}
+        try:
+            from sentinel.flywheel import DetectionFlywheel
+            fw = DetectionFlywheel()
+            health_data = fw.get_health()
+        except Exception as exc:
+            logger.warning("Health unavailable for /api/brain: %s", exc)
+
+        stats_data: dict = {}
+        try:
+            from sentinel.db import SentinelDB
+            db = SentinelDB()
+            stats_data = db.get_stats()
+            db.close()
+        except Exception as exc:
+            logger.warning("Stats unavailable for /api/brain: %s", exc)
+
+        return {
+            "nexus": nexus_data,
+            "health": health_data,
+            "stats": stats_data,
+        }
+
     return app

@@ -172,6 +172,7 @@ class TestRemoteOKSource:
 
     def test_malformed_json_returns_empty(self):
         resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 500
         resp.raise_for_status.return_value = None
         resp.json.side_effect = json.JSONDecodeError("fail", "", 0)
         client = _mock_client(resp)
