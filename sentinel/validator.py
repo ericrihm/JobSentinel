@@ -118,17 +118,35 @@ KNOWN_COMPANIES: set[str] = {
 }
 
 
-def validate_company(company_name: str, domain: str = "") -> CompanyProfile:
+def validate_company(company_name: str, domain: str = "", refresh: bool = False) -> CompanyProfile:
     """Validate a company across available sources.
 
-    Checks (each wrapped in try/except, all optional):
+    Checks cache first (unless refresh=True or cache is stale). If the cached
+    entry was written within CACHE_TTL_DAYS, it is returned immediately without
+    any network calls.
+
+    Fresh validation checks (each wrapped in try/except, all optional):
     1. LinkedIn company page existence (if httpx available)
     2. Domain WHOIS age
     3. Company size/industry from LinkedIn data
 
+    After fresh validation the result is persisted to the DB (best-effort).
     Returns CompanyProfile with whatever data was gathered.
     Falls back gracefully if httpx not installed.
     """
+    # --- Cache lookup (best-effort) ---
+    if not refresh:
+        try:
+            from sentinel.db import SentinelDB
+            db = SentinelDB()
+            cached = db.get_company(company_name)
+            db.close()
+            if cached and _is_cache_fresh(cached.get("last_checked", "")):
+                return _cached_to_profile(cached)
+        except Exception:
+            pass
+
+    # --- Fresh validation ---
     name_lower = company_name.strip().lower()
     profile = CompanyProfile(name=company_name, domain=domain)
 
@@ -156,6 +174,24 @@ def validate_company(company_name: str, domain: str = "") -> CompanyProfile:
                     profile.verification_source = "linkedin"
         except Exception:
             pass
+
+    # --- Persist to cache (best-effort) ---
+    try:
+        from sentinel.db import SentinelDB
+        db = SentinelDB()
+        db.save_company({
+            "name": profile.name,
+            "domain": profile.domain,
+            "employee_count": profile.employee_count,
+            "is_verified": profile.is_verified,
+            "linkedin_url": getattr(profile, "linkedin_url", ""),
+            "glassdoor_rating": profile.glassdoor_rating,
+            "whois_age_days": profile.whois_age_days,
+            "last_checked": _now_iso(),
+        })
+        db.close()
+    except Exception:
+        pass
 
     return profile
 
