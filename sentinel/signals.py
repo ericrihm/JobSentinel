@@ -1521,6 +1521,125 @@ def check_known_scam_entity(job: JobPosting) -> ScamSignal | None:
     return None
 
 
+
+# ---------------------------------------------------------------------------
+# Graph-based signals — cluster membership, hub posting, Sybil detection
+# ---------------------------------------------------------------------------
+
+def _extract_graph_signals(
+    job: "JobPosting",
+    graph=None,
+    profiler=None,
+) -> list["ScamSignal"]:
+    """Extract ScamSignals from graph analytics (ScamNetworkGraph + RecruiterProfiler).
+
+    Both *graph* and *profiler* are optional; if None the function returns an
+    empty list so the pipeline degrades gracefully when graph data is absent.
+    """
+    signals: list[ScamSignal] = []
+
+    try:
+        # ---- ScamNetworkGraph checks ----------------------------------------
+        if graph is not None:
+            from sentinel.graph import ScamNetworkGraph  # noqa: F401 (type check)
+
+            # Add this job to the graph and get its posting_id
+            posting_id = graph.add_posting(job)
+
+            clusters = graph.get_clusters()
+            for cluster in clusters:
+                if posting_id not in cluster.node_ids:
+                    continue
+
+                # Any cluster with ≥2 members is suspicious
+                cluster_size = len(cluster.node_ids)
+                if cluster_size >= 2:
+                    # Stronger signal for larger / cross-platform clusters
+                    if len(cluster.platforms) > 1:
+                        signals.append(ScamSignal(
+                            name="cross_platform_posting",
+                            category=SignalCategory.RED_FLAG,
+                            weight=0.75,
+                            confidence=0.72,
+                            detail=(
+                                f"Job appears in a cross-platform scam cluster "                                f"(cluster #{cluster.cluster_id}, {cluster_size} postings, "                                f"platforms: {', '.join(cluster.platforms)})"
+                            ),
+                            evidence=(
+                                f"cluster_id={cluster.cluster_id}, "                                f"platforms={cluster.platforms}, "                                f"shared_features={cluster.shared_features}"
+                            ),
+                        ))
+                    else:
+                        signals.append(ScamSignal(
+                            name="graph_cluster_member",
+                            category=SignalCategory.RED_FLAG,
+                            weight=0.65,
+                            confidence=0.68,
+                            detail=(
+                                f"Job belongs to a scam-posting cluster "                                f"(cluster #{cluster.cluster_id}, {cluster_size} connected postings)"
+                            ),
+                            evidence=(
+                                f"cluster_id={cluster.cluster_id}, "                                f"size={cluster_size}, "                                f"shared_features={cluster.shared_features}"
+                            ),
+                        ))
+
+                # Hub detection — is this posting the hub of the cluster?
+                if posting_id == cluster.hub_node and cluster.hub_degree >= 2:
+                    signals.append(ScamSignal(
+                        name="graph_hub_posting",
+                        category=SignalCategory.RED_FLAG,
+                        weight=0.80,
+                        confidence=0.75,
+                        detail=(
+                            f"Job is the hub node in a scam cluster "                            f"(degree {cluster.hub_degree} connections)"
+                        ),
+                        evidence=(
+                            f"hub_degree={cluster.hub_degree}, "                            f"cluster_id={cluster.cluster_id}"
+                        ),
+                    ))
+                break  # each posting belongs to exactly one cluster
+
+    except Exception:
+        logger.debug("Graph cluster signal extraction failed", exc_info=True)
+
+    try:
+        # ---- RecruiterProfiler checks ----------------------------------------
+        if profiler is not None:
+            rid = job.recruiter_name or job.company or "unknown"
+            flags = profiler.get_flags(rid)
+
+            if flags:
+                # Sybil detection: if this recruiter id is in any Sybil group
+                sybil_groups = profiler.detect_sybils()
+                in_sybil_group = any(rid in group for group in sybil_groups)
+
+                if in_sybil_group:
+                    signals.append(ScamSignal(
+                        name="sybil_recruiter",
+                        category=SignalCategory.RED_FLAG,
+                        weight=0.78,
+                        confidence=0.70,
+                        detail=(
+                            f"Recruiter '{rid}' is behaviourally similar to other "                            "flagged recruiters — likely a Sybil account"
+                        ),
+                        evidence=f"recruiter_id={rid}, flags={flags[:3]}",
+                    ))
+                else:
+                    # Anomalous flags without Sybil group — moderate warning
+                    flag_str = "; ".join(flags[:3])
+                    signals.append(ScamSignal(
+                        name="recruiter_anomaly_flags",
+                        category=SignalCategory.WARNING,
+                        weight=0.55,
+                        confidence=0.60,
+                        detail=f"Recruiter '{rid}' has anomalous behavioural flags: {flag_str}",
+                        evidence=f"recruiter_id={rid}, flags={flags[:3]}",
+                    ))
+
+    except Exception:
+        logger.debug("RecruiterProfiler signal extraction failed", exc_info=True)
+
+    return signals
+
 # ---------------------------------------------------------------------------
 # Registry + runner
 # ---------------------------------------------------------------------------
@@ -1631,4 +1750,33 @@ def extract_signals_with_db(job: JobPosting, db) -> list[ScamSignal]:
         signal = check_fn(job, db=db)
         if signal is not None:
             signals.append(signal)
+    return signals
+
+
+def extract_signals_with_graph(
+    job: JobPosting,
+    *,
+    graph=None,
+    profiler=None,
+) -> list[ScamSignal]:
+    """Run all stateless signals plus graph-based cluster/recruiter signals.
+
+    Parameters
+    ----------
+    job:
+        The job posting to analyse.
+    graph:
+        An optional :class: instance that has
+        already been populated with other postings.  The current *job* will be
+        added to the graph and cluster membership will be checked.
+    profiler:
+        An optional :class: instance that has
+        already recorded historical recruiter activity for the job's recruiter.
+
+    Both parameters default to *None*; when omitted the function behaves
+    identically to :func:.
+    """
+    signals = extract_signals(job)
+    graph_signals = _extract_graph_signals(job, graph=graph, profiler=profiler)
+    signals.extend(graph_signals)
     return signals

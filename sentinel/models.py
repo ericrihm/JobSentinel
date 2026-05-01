@@ -109,6 +109,9 @@ class ValidationResult:
     ai_analysis: str = ""
     ai_tier_used: str = ""
     analysis_time_ms: float = 0.0
+    ensemble_disagreement: float = 0.0
+    needs_review: bool = False
+    signal_attributions: list[dict] = field(default_factory=list)
 
     @property
     def red_flags(self) -> list[ScamSignal]:
@@ -151,6 +154,7 @@ class ValidationResult:
             "signal_count": len(self.signals),
             "ai_tier_used": self.ai_tier_used,
             "analysis_time_ms": round(self.analysis_time_ms, 1),
+            "signal_attributions": self.signal_attributions,
         }
 
 

@@ -337,6 +337,169 @@ class CounterfactualEngine:
         return None
 
 
+
+# ---------------------------------------------------------------------------
+# SignalAttributor
+# ---------------------------------------------------------------------------
+
+class SignalAttributor:
+    """Shapley-inspired signal importance attribution.
+
+    For each signal, computes how much it individually contributed to the
+    final scam score (leave-one-out marginal attribution).  Pairwise
+    interaction effects reveal which pairs of signals reinforce or cancel
+    each other.
+
+    Usage::
+
+        attributor = SignalAttributor()
+        attributions = attributor.attribute(signals)
+        interactions = attributor.interaction_effects(signals, top_k=5)
+    """
+
+    def attribute(self, signals: list) -> list[dict]:
+        """Compute leave-one-out marginal attribution for each signal.
+
+        For each signal *s* in *signals*:
+          full_score       = score(all signals)
+          loo_score        = score(all signals except s)
+          attribution(s)   = full_score - loo_score
+
+        A positive attribution means the signal pushed the score *up*
+        (toward scam); a negative attribution means it pulled the score
+        *down* (e.g. a POSITIVE legitimacy signal).
+
+        Returns:
+            List of dicts sorted by |attribution| descending::
+
+                [
+                    {
+                        "signal_name": str,
+                        "attribution": float,   # full - loo
+                        "full_score":  float,
+                        "loo_score":   float,
+                        "weight":      float,
+                        "category":    str,
+                    },
+                    ...
+                ]
+        """
+        if not signals:
+            return []
+
+        full_score = _score_signals_pure(signals)
+        results: list[dict] = []
+
+        for i, sig in enumerate(signals):
+            without = [s for j, s in enumerate(signals) if j != i]
+            loo_score = _score_signals_pure(without)
+            attribution = full_score - loo_score
+            results.append(
+                {
+                    "signal_name": sig.name,
+                    "attribution": round(attribution, 6),
+                    "full_score":  round(full_score, 6),
+                    "loo_score":   round(loo_score, 6),
+                    "weight":      sig.weight,
+                    "category":    sig.category.value,
+                }
+            )
+
+        results.sort(key=lambda r: abs(r["attribution"]), reverse=True)
+        return results
+
+    def interaction_effects(
+        self,
+        signals: list,
+        top_k: int = 5,
+    ) -> list[dict]:
+        """Compute pairwise interaction effects for the top-k signals by attribution.
+
+        For each pair (A, B) drawn from the *top_k* signals by |attribution|:
+
+          interaction(A, B) = (full - without_A) + (full - without_B) - (full - without_AB)
+                            = attr(A) + attr(B) - joint_attr(AB)
+
+        Where joint_attr(AB) = full - score(all signals except A and B).
+
+        Interpretation:
+          * Positive value → signals reinforce each other (super-additive).
+          * Negative value → signals partially cancel (redundant / sub-additive).
+          * Near zero     → signals are approximately independent.
+
+        Args:
+            signals: The full list of ScamSignals for the job.
+            top_k:   Number of top signals (by |attribution|) to use as candidates.
+
+        Returns:
+            List of dicts sorted by |interaction| descending::
+
+                [
+                    {
+                        "signal_a":      str,
+                        "signal_b":      str,
+                        "interaction":   float,
+                        "attribution_a": float,
+                        "attribution_b": float,
+                        "joint_attr":    float,   # full - without_AB
+                        "full_score":    float,
+                    },
+                    ...
+                ]
+        """
+        if len(signals) < 2:
+            return []
+
+        # Get per-signal attributions, take top-k by |attribution|
+        all_attrs = self.attribute(signals)
+        top_signals = all_attrs[:top_k]
+
+        if len(top_signals) < 2:
+            return []
+
+        full_score = _score_signals_pure(signals)
+
+        # Build a name->index map for fast lookup
+        name_to_idx: dict[str, int] = {s.name: i for i, s in enumerate(signals)}
+
+        results: list[dict] = []
+        for i in range(len(top_signals)):
+            for j in range(i + 1, len(top_signals)):
+                a_info = top_signals[i]
+                b_info = top_signals[j]
+                a_name = a_info["signal_name"]
+                b_name = b_info["signal_name"]
+
+                idx_a = name_to_idx.get(a_name)
+                idx_b = name_to_idx.get(b_name)
+                if idx_a is None or idx_b is None:
+                    continue
+
+                excluded = {idx_a, idx_b}
+                without_ab = [s for k, s in enumerate(signals) if k not in excluded]
+                loo_ab_score = _score_signals_pure(without_ab)
+
+                attr_a = a_info["attribution"]
+                attr_b = b_info["attribution"]
+                joint_attr = round(full_score - loo_ab_score, 6)
+                interaction = round(attr_a + attr_b - joint_attr, 6)
+
+                results.append(
+                    {
+                        "signal_a":      a_name,
+                        "signal_b":      b_name,
+                        "interaction":   interaction,
+                        "attribution_a": attr_a,
+                        "attribution_b": attr_b,
+                        "joint_attr":    joint_attr,
+                        "full_score":    round(full_score, 6),
+                    }
+                )
+
+        results.sort(key=lambda r: abs(r["interaction"]), reverse=True)
+        return results
+
+
 # ---------------------------------------------------------------------------
 # FailureAnalyzer
 # ---------------------------------------------------------------------------
