@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from sentinel.db import SentinelDB
 from sentinel.models import ScamPattern, SignalCategory, UserReport
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -270,6 +273,8 @@ class KnowledgeBase:
         else:
             was_correct = our_prediction < 0.5
 
+        verdict = "scam" if is_scam else "legitimate"
+        logger.info("Report submitted: url=%s verdict=%s was_correct=%s", url, verdict, was_correct)
         self.db.save_report(
             {
                 "url": url,

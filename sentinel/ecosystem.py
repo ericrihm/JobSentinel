@@ -4,9 +4,12 @@ Publishes observations to engram, events to interop mesh, crash signals
 to autopsy, and flywheel state to session-bridge.
 """
 import json
+import logging
 import os
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 OBSERVATIONS_PATH = Path.home() / ".config" / "ctools" / "observations.jsonl"
 EVENTS_PATH = Path.home() / ".config" / "ctools" / "events.jsonl"

@@ -1,5 +1,6 @@
 """Multi-tier AI analysis for job postings."""
 
+import logging
 import time
 from typing import Optional
 
@@ -7,6 +8,8 @@ from sentinel.models import JobPosting, ScamSignal, SignalCategory, ValidationRe
 from sentinel.signals import extract_signals
 from sentinel.scorer import build_result
 from sentinel.config import get_config
+
+logger = logging.getLogger(__name__)
 
 try:
     import anthropic as _anthropic
@@ -41,6 +44,8 @@ def analyze_job(job: JobPosting, use_ai: bool = True) -> ValidationResult:
     3. If score is ambiguous (0.3-0.7) and use_ai=True, escalate to AI tier
     4. Return complete ValidationResult
     """
+    label = job.title or job.url or "(unknown)"
+    logger.info("Starting analysis: %s", label)
     start_ms = time.monotonic() * 1000
 
     signals = extract_signals(job)
@@ -52,6 +57,13 @@ def analyze_job(job: JobPosting, use_ai: bool = True) -> ValidationResult:
         result.ai_tier_used = tier
 
     result.analysis_time_ms = (time.monotonic() * 1000) - start_ms
+    logger.info(
+        "Analysis complete: %s — score=%.2f risk=%s time=%.0fms",
+        label,
+        result.scam_score,
+        result.risk_level.value,
+        result.analysis_time_ms,
+    )
     return result
 
 
@@ -134,7 +146,7 @@ def _escalate_to_ai(
         if analysis:
             return (analysis, haiku)
     except Exception:
-        pass
+        logger.warning("Haiku AI tier failed; falling back to Sonnet", exc_info=True)
 
     # Tier 2: Sonnet (deeper analysis for persistent ambiguity)
     try:
@@ -150,7 +162,7 @@ def _escalate_to_ai(
         if analysis:
             return (analysis, sonnet)
     except Exception:
-        pass
+        logger.warning("Sonnet AI tier failed; returning empty analysis", exc_info=True)
 
     return ("", "failed")
 

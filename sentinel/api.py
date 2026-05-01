@@ -11,7 +11,45 @@ Optional dependency: fastapi + uvicorn.
 Returns a clear ImportError if not installed.
 """
 
+import logging
+import os
+import re
+import time
+from collections import defaultdict
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter — in-memory sliding window, no external dependencies
+# ---------------------------------------------------------------------------
+
+class RateLimiter:
+    """Sliding-window rate limiter keyed by client IP.
+
+    Tracks request timestamps per IP in a 60-second window. Thread-safety is
+    not required because FastAPI runs handlers in a single event loop thread
+    for sync endpoints (which these are).
+    """
+
+    def __init__(self, rpm: int = 60) -> None:
+        self.rpm = rpm
+        self.requests: dict[str, list[float]] = defaultdict(list)
+
+    def is_allowed(self, client_ip: str) -> bool:
+        """Return True if the IP is under the rate limit, False if exceeded.
+
+        Side-effect: records the current request timestamp when allowed.
+        """
+        now = time.monotonic()
+        window = self.requests[client_ip]
+        # Evict entries older than the 60-second window
+        self.requests[client_ip] = [t for t in window if now - t < 60]
+        if len(self.requests[client_ip]) >= self.rpm:
+            return False
+        self.requests[client_ip].append(now)
+        return True
 
 # ---------------------------------------------------------------------------
 # Request / response models — defined at module scope so Pydantic can resolve
@@ -37,10 +75,24 @@ try:
                 raise ValueError("url must start with http:// or https://")
             return v
 
+        @field_validator("text", "title", "company")
+        @classmethod
+        def no_script_tags(cls, v: Optional[str]) -> Optional[str]:
+            if v is not None and re.search(r"<script", v, re.IGNORECASE):
+                raise ValueError("Input may not contain script tags")
+            return v
+
     class ReportRequest(BaseModel):
         url: str = Field(..., max_length=2048, description="Job posting URL being reported.")
         is_scam: bool = Field(..., description="True if this is a scam, False if legitimate.")
         reason: str = Field("", max_length=5000, description="Optional explanation.")
+
+        @field_validator("reason")
+        @classmethod
+        def no_script_in_reason(cls, v: str) -> str:
+            if v and re.search(r"<script", v, re.IGNORECASE):
+                raise ValueError("reason may not contain script tags")
+            return v
 
     class ReportResponse(BaseModel):
         url: str
@@ -100,13 +152,15 @@ except ImportError:
 def create_app():  # noqa: C901
     """Create and configure the FastAPI application."""
     try:
-        from fastapi import FastAPI, HTTPException, Query
+        from fastapi import FastAPI, HTTPException, Query, Request, Response
         from fastapi.middleware.cors import CORSMiddleware
     except ImportError:
         raise ImportError(
             "FastAPI and Uvicorn are required for the API server.\n"
             "Install them with:  pip install fastapi uvicorn"
         )
+
+    from sentinel.config import get_config
 
     # -----------------------------------------------------------------------
     # App setup
@@ -130,6 +184,39 @@ def create_app():  # noqa: C901
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # -----------------------------------------------------------------------
+    # Rate-limit + API-key middleware
+    # -----------------------------------------------------------------------
+
+    cfg = get_config()
+    _rate_limiter = RateLimiter(rpm=cfg.rate_limit_rpm)
+    _api_key = os.environ.get("SENTINEL_API_KEY", "")
+
+    @app.middleware("http")
+    async def auth_and_rate_limit(request: Request, call_next):
+        # --- Optional API key authentication ---
+        if _api_key:
+            provided = request.headers.get("X-API-Key", "")
+            if provided != _api_key:
+                return Response(
+                    content='{"detail":"Invalid or missing API key"}',
+                    status_code=401,
+                    media_type="application/json",
+                    headers={"WWW-Authenticate": "ApiKey"},
+                )
+
+        # --- Sliding-window rate limit ---
+        client_host = (request.client.host if request.client else "unknown")
+        if not _rate_limiter.is_allowed(client_host):
+            return Response(
+                content='{"detail":"Rate limit exceeded"}',
+                status_code=429,
+                media_type="application/json",
+                headers={"Retry-After": "60"},
+            )
+
+        return await call_next(request)
 
     # -----------------------------------------------------------------------
     # POST /api/analyze
@@ -190,8 +277,14 @@ def create_app():  # noqa: C901
             })
             db.close()
         except Exception:
-            pass
+            logger.warning("Failed to persist analysis result to DB", exc_info=True)
 
+        logger.info(
+            "POST /api/analyze: score=%.2f risk=%s signals=%d",
+            result.scam_score,
+            result.risk_level.value,
+            len(result.signals),
+        )
         return result.to_dict()
 
     # -----------------------------------------------------------------------
@@ -216,7 +309,7 @@ def create_app():  # noqa: C901
                 our_prediction = existing.get("scam_score", 0.0)
             db.close()
         except Exception:
-            pass
+            logger.warning("Could not retrieve prior prediction for %s", req.url, exc_info=True)
 
         try:
             kb = KnowledgeBase()
@@ -231,6 +324,7 @@ def create_app():  # noqa: C901
                 status_code=500, detail=f"Failed to record report: {exc}"
             ) from exc
 
+        logger.info("POST /api/report: url=%s verdict=%s", req.url, "scam" if req.is_scam else "legitimate")
         return {
             "url": req.url,
             "verdict": "scam" if req.is_scam else "legitimate",

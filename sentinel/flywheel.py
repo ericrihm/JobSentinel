@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime, timezone
 from typing import Any
 
 from sentinel.db import SentinelDB
 from sentinel.models import ScamPattern, UserReport, ValidationResult
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -370,6 +373,7 @@ class DetectionFlywheel:
         """Execute one complete flywheel cycle and persist metrics."""
         self._cycle_count += 1
         cycle_ts = _now_iso()
+        logger.info("Flywheel cycle %d starting", self._cycle_count)
 
         # Accuracy snapshot
         accuracy = self.compute_accuracy()
@@ -404,6 +408,17 @@ class DetectionFlywheel:
 
         self.db.save_flywheel_metrics(metrics)
 
+        logger.info(
+            "Flywheel cycle %d complete: precision=%.3f recall=%.3f f1=%.3f "
+            "promoted=%d deprecated=%d regression_alarm=%s",
+            self._cycle_count,
+            metrics["precision"],
+            metrics["recall"],
+            metrics["f1"],
+            len(evolution.get("promoted", [])),
+            len(evolution.get("deprecated", [])),
+            metrics["regression_alarm"],
+        )
         return metrics
 
     # ------------------------------------------------------------------
