@@ -1,0 +1,62 @@
+name: Deploy Cloudflare Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy worker
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: workers/
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: workers/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run schema migration (when schema changed)
+        if: |
+          contains(github.event.commits[*].modified, 'workers/src/schema.sql') ||
+          contains(github.event.commits[*].added, 'workers/src/schema.sql')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run db:init:remote
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: workers/
+
+      - name: Write deployment summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Deployment
+
+          Worker deployed successfully to Cloudflare.
+
+          **Worker:** jobsentinel-api
+          **URL:** https://api.jobsentinel.org
+          **Commit:** ${{ github.sha }}
+          **Triggered by:** ${{ github.actor }}
+          EOF

@@ -1,24 +1,61 @@
+# =============================================================================
+# JobSentinel API — Cloudflare Worker Configuration
+# =============================================================================
+#
+# SETUP INSTRUCTIONS (run these once before deploying):
+#
+#   1. Authenticate:
+#        wrangler login
+#
+#   2. Create the KV namespace for rate limiting:
+#        wrangler kv:namespace create "RATE_LIMIT"
+#      Copy the returned `id` and `preview_id` into the [[kv_namespaces]] block.
+#
+#   3. Create the D1 database:
+#        wrangler d1 create jobsentinel-db
+#      Copy the returned `database_id` into the [[d1_databases]] block.
+#
+#   4. Initialize the remote schema:
+#        npm run db:init:remote
+#
+#   5. Deploy:
+#        npm run deploy
+#
+#   6. Add the custom domain in the Cloudflare dashboard:
+#        Workers & Pages → jobsentinel-api → Triggers → Custom Domains
+#        Add: api.jobsentinel.org
+#      (Your zone for jobsentinel.org must already be active in Cloudflare.)
+#
+# See workers/README.md for full deployment documentation.
+# =============================================================================
+
 name = "jobsentinel-api"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Account ID — fill in from `wrangler whoami` or Cloudflare dashboard
+# Account ID — fill in from `wrangler whoami` or the Cloudflare dashboard.
 # account_id = "YOUR_ACCOUNT_ID"
 
 [vars]
 ENVIRONMENT = "production"
 API_VERSION = "1.0.0"
 
-# Cloudflare KV namespace for rate limiting
+# ---------------------------------------------------------------------------
+# KV Namespace — rate limiting
 # Create with: wrangler kv:namespace create "RATE_LIMIT"
+# Replace the placeholder IDs with the values returned by that command.
+# ---------------------------------------------------------------------------
 [[kv_namespaces]]
 binding = "RATE_LIMIT"
 id = "REPLACE_WITH_KV_ID"
 preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
 
-# Cloudflare D1 database for scan history and patterns
+# ---------------------------------------------------------------------------
+# D1 Database — scan history and patterns
 # Create with: wrangler d1 create jobsentinel-db
+# Replace the placeholder ID with the value returned by that command.
+# ---------------------------------------------------------------------------
 [[d1_databases]]
 binding = "DB"
 database_name = "jobsentinel-db"
@@ -27,7 +64,10 @@ database_id = "REPLACE_WITH_D1_DB_ID"
 [triggers]
 crons = []
 
-# Route configuration — update with your custom domain after deploying
-# [routes]
-# pattern = "api.yourdomain.com/*"
-# zone_name = "yourdomain.com"
+# ---------------------------------------------------------------------------
+# Route — custom domain (api.jobsentinel.org)
+# Uncomment after the custom domain is configured in Cloudflare.
+# ---------------------------------------------------------------------------
+[[routes]]
+pattern = "api.jobsentinel.org/*"
+zone_name = "jobsentinel.org"

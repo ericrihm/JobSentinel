@@ -1,5 +1,5 @@
 /**
- * signals.js — Top 15 scam signal detectors ported from Python
+ * signals.js — 21 scam signal detectors ported from Python
  *
  * Each detector receives a job object and returns a signal object or null.
  * Signal object shape: { name, category, weight, confidence, detail, evidence }
@@ -412,6 +412,7 @@ export function checkSuspiciousLinks(job) {
 // ---------------------------------------------------------------------------
 
 export const ALL_SIGNALS = [
+  // Red flags
   checkUpfrontPayment,
   checkPersonalInfoRequest,
   checkGuaranteedIncome,
@@ -421,13 +422,22 @@ export const ALL_SIGNALS = [
   checkInterviewBypass,
   checkMlmLanguage,
   checkReshipping,
+  // Warnings
   checkSalaryAnomaly,
   checkVagueDescription,
   checkNoQualifications,
   checkUrgencyLanguage,
   checkWfhUnrealistic,
+  checkGrammarQuality,
+  // Ghost job
   checkStalePosting,
+  // Structural
   checkSuspiciousLinks,
+  // Positive
+  checkCompanyDetails,
+  checkStructuredInterview,
+  checkBenefitsListed,
+  checkSalaryRange,
 ];
 
 /**
@@ -442,4 +452,126 @@ export function extractSignals(job) {
     if (signal !== null) signals.push(signal);
   }
   return signals;
+}
+
+
+// ---------------------------------------------------------------------------
+// Signal 17: grammar_quality  (WARNING, weight 0.45)
+// ---------------------------------------------------------------------------
+
+export function checkGrammarQuality(job) {
+  const text = fullText(job);
+  if (text.length < 100) return null;
+
+  let score = 0;
+  const capsWords = (text.match(RE_GRAMMAR_CAPS) || []).length;
+  if (capsWords > 3) score += capsWords;
+  const excessPunct = (text.match(RE_GRAMMAR_PUNCT) || []).length;
+  if (excessPunct > 0) score += excessPunct * 3;
+
+  if (score < 5) return null;
+  return {
+    name: 'grammar_quality',
+    category: 'warning',
+    weight: 0.45,
+    confidence: 0.55,
+    detail: 'Excessive capitalization and punctuation — common in scam postings',
+    evidence: `${capsWords} all-caps words, ${excessPunct} repeated punctuation`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Signal 18: company_details  (POSITIVE, weight 0.35)
+// ---------------------------------------------------------------------------
+
+const RE_COMPANY_DETAILS = /\b(founded in \d{4}|our team of \d+|series [a-c]|publicly traded|nasdaq|nyse|fortune \d+|inc\.? 5000|verified employer|employees?\b.*\d{2,})\b/i;
+
+export function checkCompanyDetails(job) {
+  const text = fullText(job);
+  const m = text.match(RE_COMPANY_DETAILS);
+  if (!m) return null;
+  return {
+    name: 'company_details',
+    category: 'positive',
+    weight: 0.35,
+    confidence: 0.70,
+    detail: 'Posting includes verifiable company details (founding year, size, funding)',
+    evidence: m[0],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Signal 19: structured_interview  (POSITIVE, weight 0.30)
+// ---------------------------------------------------------------------------
+
+export function checkStructuredInterview(job) {
+  const text = fullText(job);
+  const matches = [];
+  const re = /\b(phone screen|technical interview|panel interview|coding challenge|take.?home (test|assignment)|onsite interview|background check|reference check|offer letter|onboarding)\b/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    matches.push(m[0]);
+  }
+  if (matches.length < 2) return null;
+  return {
+    name: 'structured_interview',
+    category: 'positive',
+    weight: 0.30,
+    confidence: 0.75,
+    detail: 'Multi-step interview process described — strong legitimacy indicator',
+    evidence: matches.slice(0, 3).join(', '),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Signal 20: benefits_listed  (POSITIVE, weight 0.28)
+// ---------------------------------------------------------------------------
+
+export function checkBenefitsListed(job) {
+  const text = fullText(job);
+  const matches = [];
+  const re = /\b(health insurance|dental|vision|401\(?k\)?|paid time off|pto|parental leave|stock options|equity|rsu|espp|tuition reimbursement|retirement|pension)\b/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    matches.push(m[0]);
+  }
+  if (matches.length < 2) return null;
+  return {
+    name: 'benefits_listed',
+    category: 'positive',
+    weight: 0.28,
+    confidence: 0.72,
+    detail: 'Legitimate employment benefits described',
+    evidence: matches.slice(0, 4).join(', '),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Signal 21: salary_range_present  (POSITIVE, weight 0.20)
+// ---------------------------------------------------------------------------
+
+const RE_SALARY_RANGE = /\$[\d,]+[kK]?\s*[-–—to]+\s*\$[\d,]+[kK]?/;
+
+export function checkSalaryRange(job) {
+  const text = fullText(job);
+  if (job.salary_min > 0 && job.salary_max > 0) {
+    return {
+      name: 'salary_range',
+      category: 'positive',
+      weight: 0.20,
+      confidence: 0.65,
+      detail: 'Specific salary range provided',
+      evidence: '$' + job.salary_min.toLocaleString() + '-$' + job.salary_max.toLocaleString(),
+    };
+  }
+  const m2 = text.match(RE_SALARY_RANGE);
+  if (!m2) return null;
+  return {
+    name: 'salary_range',
+    category: 'positive',
+    weight: 0.20,
+    confidence: 0.65,
+    detail: 'Specific salary range provided',
+    evidence: m2[0],
+  };
 }

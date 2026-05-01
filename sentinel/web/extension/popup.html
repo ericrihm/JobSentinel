@@ -12,6 +12,11 @@
   <header class="popup-header">
     <span class="popup-logo">🛡</span>
     <span class="popup-title">JobSentinel</span>
+    <div class="popup-header-actions">
+      <a href="https://jobsentinel.org/analyze.html" target="_blank" rel="noopener"
+         class="popup-header-link" title="Open full web app">Web App</a>
+      <button id="btn-options" class="popup-header-link" title="Settings">Settings</button>
+    </div>
   </header>
 
   <!-- Loading state -->
@@ -24,13 +29,17 @@
   <div id="state-no-job" class="state hidden">
     <p class="state-icon">💼</p>
     <p class="state-msg">Navigate to a LinkedIn job posting to analyze it.</p>
+    <button id="btn-analyze" class="btn btn--primary btn--full" style="margin-top:12px">
+      Analyze Current Page
+    </button>
   </div>
 
   <!-- API error state -->
   <div id="state-error" class="state hidden">
     <p class="state-icon">⚠️</p>
     <p class="state-msg" id="error-msg">Could not connect to the JobSentinel API.</p>
-    <p class="state-hint">Make sure <code>sentinel serve</code> is running on port 8080.</p>
+    <p class="state-hint">The extension will retry with client-side detection.</p>
+    <button id="btn-retry" class="btn btn--primary btn--full" style="margin-top:12px">Retry</button>
   </div>
 
   <!-- Result state -->
@@ -45,6 +54,9 @@
         <span id="score-pct" class="score-pct">0%</span>
         <span class="score-label">scam probability</span>
       </div>
+      <button id="btn-analyze-result" class="btn btn--primary btn--sm" style="margin-left:auto">
+        Re-scan
+      </button>
     </div>
 
     <!-- Job meta -->
@@ -57,6 +69,7 @@
     <div class="confidence-row">
       <span class="confidence-label">Confidence:</span>
       <span id="confidence-val" class="confidence-val">—</span>
+      <span id="analysis-source" class="analysis-source"></span>
     </div>
 
     <!-- Signal breakdown -->
@@ -86,8 +99,14 @@
 
     <!-- Actions -->
     <div class="action-row">
-      <button id="btn-report" class="btn btn--danger">Report Scam</button>
-      <button id="btn-legit" class="btn btn--safe">Mark Legitimate</button>
+      <button id="btn-report" class="btn btn--danger">Report as Scam</button>
+      <button id="btn-legit"  class="btn btn--safe">Report as Legit</button>
+    </div>
+
+    <!-- Full report link -->
+    <div class="footer-row">
+      <a id="link-full-report" href="https://jobsentinel.org/analyze.html"
+         target="_blank" rel="noopener" class="footer-link">View full report on jobsentinel.org →</a>
     </div>
 
     <!-- Timestamp -->
