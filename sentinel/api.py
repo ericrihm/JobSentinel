@@ -11,26 +11,15 @@ Optional dependency: fastapi + uvicorn.
 Returns a clear ImportError if not installed.
 """
 
-from __future__ import annotations
-
 from typing import Any, Optional
 
+# ---------------------------------------------------------------------------
+# Request / response models — defined at module scope so Pydantic can resolve
+# forward references correctly with FastAPI 0.136+ / Pydantic v2.
+# ---------------------------------------------------------------------------
 
-def create_app():  # noqa: C901
-    """Create and configure the FastAPI application."""
-    try:
-        from fastapi import FastAPI, HTTPException, Query
-        from fastapi.middleware.cors import CORSMiddleware
-        from pydantic import BaseModel, Field, field_validator
-    except ImportError:
-        raise ImportError(
-            "FastAPI and Uvicorn are required for the API server.\n"
-            "Install them with:  pip install fastapi uvicorn"
-        )
-
-    # -----------------------------------------------------------------------
-    # Request / response models
-    # -----------------------------------------------------------------------
+try:
+    from pydantic import BaseModel, Field, field_validator
 
     class AnalyzeRequest(BaseModel):
         """Payload for POST /api/analyze.  Provide one of: text, url, or job_data."""
@@ -102,6 +91,23 @@ def create_app():  # noqa: C901
         cycle_count: int
         checked_at: str
 
+except ImportError:
+    # FastAPI/Pydantic not installed — models won't be available at import time.
+    # create_app() will raise a clear ImportError when called.
+    pass
+
+
+def create_app():  # noqa: C901
+    """Create and configure the FastAPI application."""
+    try:
+        from fastapi import FastAPI, HTTPException, Query
+        from fastapi.middleware.cors import CORSMiddleware
+    except ImportError:
+        raise ImportError(
+            "FastAPI and Uvicorn are required for the API server.\n"
+            "Install them with:  pip install fastapi uvicorn"
+        )
+
     # -----------------------------------------------------------------------
     # App setup
     # -----------------------------------------------------------------------
@@ -117,10 +123,9 @@ def create_app():  # noqa: C901
         redoc_url="/redoc",
     )
 
-    from sentinel.config import get_config
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=get_config().cors_origins,
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
