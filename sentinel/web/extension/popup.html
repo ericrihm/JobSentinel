@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JobSentinel</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="popup-body">
+
+  <!-- Header -->
+  <header class="popup-header">
+    <span class="popup-logo">🛡</span>
+    <span class="popup-title">JobSentinel</span>
+  </header>
+
+  <!-- Loading state -->
+  <div id="state-loading" class="state hidden">
+    <div class="spinner"></div>
+    <p class="state-msg">Analyzing job posting…</p>
+  </div>
+
+  <!-- No-job state -->
+  <div id="state-no-job" class="state hidden">
+    <p class="state-icon">💼</p>
+    <p class="state-msg">Navigate to a LinkedIn job posting to analyze it.</p>
+  </div>
+
+  <!-- API error state -->
+  <div id="state-error" class="state hidden">
+    <p class="state-icon">⚠️</p>
+    <p class="state-msg" id="error-msg">Could not connect to the JobSentinel API.</p>
+    <p class="state-hint">Make sure <code>sentinel serve</code> is running on port 8080.</p>
+  </div>
+
+  <!-- Result state -->
+  <div id="state-result" class="state hidden">
+
+    <!-- Risk badge -->
+    <div class="result-badge-wrap">
+      <div id="risk-badge" class="risk-badge">
+        <span id="risk-label">—</span>
+      </div>
+      <div class="score-pct-wrap">
+        <span id="score-pct" class="score-pct">0%</span>
+        <span class="score-label">scam probability</span>
+      </div>
+    </div>
+
+    <!-- Job meta -->
+    <div class="job-meta">
+      <div id="job-title" class="job-title"></div>
+      <div id="job-company" class="job-company"></div>
+    </div>
+
+    <!-- Confidence -->
+    <div class="confidence-row">
+      <span class="confidence-label">Confidence:</span>
+      <span id="confidence-val" class="confidence-val">—</span>
+    </div>
+
+    <!-- Signal breakdown -->
+    <div class="signals-section">
+
+      <div id="red-flags-section" class="signal-group hidden">
+        <h3 class="signal-heading signal-heading--danger">Red Flags</h3>
+        <ul id="red-flags-list" class="signal-list signal-list--danger"></ul>
+      </div>
+
+      <div id="warnings-section" class="signal-group hidden">
+        <h3 class="signal-heading signal-heading--warning">Warnings</h3>
+        <ul id="warnings-list" class="signal-list signal-list--warning"></ul>
+      </div>
+
+      <div id="positives-section" class="signal-group hidden">
+        <h3 class="signal-heading signal-heading--safe">Positive Signals</h3>
+        <ul id="positives-list" class="signal-list signal-list--safe"></ul>
+      </div>
+
+    </div>
+
+    <!-- AI summary -->
+    <div id="summary-section" class="summary-section hidden">
+      <p id="summary-text" class="summary-text"></p>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-row">
+      <button id="btn-report" class="btn btn--danger">Report Scam</button>
+      <button id="btn-legit" class="btn btn--safe">Mark Legitimate</button>
+    </div>
+
+    <!-- Timestamp -->
+    <div id="timestamp" class="timestamp"></div>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
