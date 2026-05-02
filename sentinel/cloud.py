@@ -35,7 +35,7 @@ class CloudConfig:
 
     Environment variables:
         SENTINEL_DB_URL       — Turso/D1/local SQLite path
-        SENTINEL_API_KEY      — API key for Claude AI analysis (optional)
+        SENTINEL_API_KEY      — API key for AI analysis (optional)
         SENTINEL_SCAN_QUERIES — comma-separated job search queries
         SENTINEL_SCAN_INTERVAL — hours between scans (default: 1)
         SENTINEL_REPORT_WEBHOOK — webhook URL for scan results

@@ -126,7 +126,7 @@ def _escalate_to_ai(
     signals: list[ScamSignal],
     current_score: float,
 ) -> tuple[str, str]:
-    """Call Claude API for deeper analysis on ambiguous postings.
+    """Call AI API for deeper analysis on ambiguous postings.
 
     Returns (ai_analysis_text, tier_used).
     Tier selection:

@@ -10,9 +10,9 @@ _DEFAULT_CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".config", "sentine
 class SentinelConfig:
     db_path: str = os.path.join(os.path.expanduser("~"), ".sentinel", "sentinel.db")
     ai_enabled: bool = True
-    ai_model: str = "claude-haiku-4-5"
-    ai_model_deep: str = "claude-sonnet-4-6"
-    api_key_env: str = "ANTHROPIC_API_KEY"
+    ai_model: str = os.environ.get("AI_MODEL", "claude-haiku-4-5")
+    ai_model_deep: str = os.environ.get("AI_MODEL_DEEP", "claude-sonnet-4-6")
+    api_key_env: str = "AI_API_KEY"
     max_ai_calls_per_hour: int = 100
     rate_limit_rpm: int = 60
     cors_origins: list[str] = field(default_factory=lambda: ["http://localhost:3000"])
