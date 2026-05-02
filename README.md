@@ -178,8 +178,8 @@ Detection statistics and service health check.
 
 db_path = "~/.sentinel/sentinel.db"
 ai_enabled = true
-ai_model = "claude-haiku-4-5"
-ai_model_deep = "claude-sonnet-4-6"
+ai_model = "$AI_MODEL"
+ai_model_deep = "$AI_MODEL_DEEP"
 rate_limit_rpm = 60
 cors_origins = ["http://localhost:3000"]
 log_level = "INFO"
