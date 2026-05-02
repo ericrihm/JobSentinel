@@ -9,9 +9,13 @@ import pytest
 from sentinel.models import JobPosting
 from sentinel.sources import (
     AdzunaSource,
+    AshbySource,
+    GreenhouseSource,
     JobSource,
+    LeverSource,
     RemoteOKSource,
     RemotiveSource,
+    SmartRecruitersSource,
     TheMuseSource,
     USAJobsSource,
     fetch_from_all,
@@ -420,3 +424,368 @@ class TestFetchFromAll:
 
         assert len(results) == 1
         assert results[0].title == "OK"
+
+
+# ---------------------------------------------------------------------------
+# Greenhouse tests
+# ---------------------------------------------------------------------------
+
+GREENHOUSE_RESPONSE = {
+    "jobs": [
+        {
+            "id": 101,
+            "title": "Senior Python Engineer",
+            "location": {"name": "Remote"},
+            "content": "<p>Build <b>awesome</b> systems with Python and Django.</p>",
+            "absolute_url": "https://boards.greenhouse.io/acme/jobs/101",
+            "updated_at": "2026-04-10T09:00:00Z",
+        },
+        {
+            "id": 102,
+            "title": "Java Developer",
+            "location": {"name": "New York, NY"},
+            "content": "<p>Enterprise Java work</p>",
+            "absolute_url": "https://boards.greenhouse.io/acme/jobs/102",
+            "updated_at": "2026-04-11T09:00:00Z",
+        },
+    ]
+}
+
+
+class TestGreenhouseSource:
+    def test_fetch_maps_fields(self):
+        client = _mock_client(_mock_response(GREENHOUSE_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = GreenhouseSource(companies=["acme"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert len(jobs) == 2
+        job = jobs[0]
+        assert job.title == "Senior Python Engineer"
+        assert job.company == "acme"
+        assert job.location == "Remote"
+        assert "awesome" in job.description
+        assert "<b>" not in job.description  # HTML stripped
+        assert job.url == "https://boards.greenhouse.io/acme/jobs/101"
+        assert job.posted_date == "2026-04-10T09:00:00Z"
+        assert job.source == "greenhouse"
+
+    def test_empty_companies_returns_empty(self):
+        source = GreenhouseSource(companies=[])
+        jobs = source.fetch(query="python")
+        assert jobs == []
+
+    def test_no_companies_default_returns_empty(self):
+        source = GreenhouseSource()
+        jobs = source.fetch()
+        assert jobs == []
+
+    def test_query_filtering(self):
+        client = _mock_client(_mock_response(GREENHOUSE_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = GreenhouseSource(companies=["acme"])
+            jobs = source.fetch(query="python", limit=10)
+
+        # Only the Python job should match
+        assert len(jobs) == 1
+        assert jobs[0].title == "Senior Python Engineer"
+
+    def test_http_error_returns_empty(self):
+        client = _mock_client(_mock_response({}, status_code=500))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = GreenhouseSource(companies=["acme"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_network_error_returns_empty(self):
+        client = _mock_client(None)
+        client.get.side_effect = httpx.ConnectError("refused")
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = GreenhouseSource(companies=["acme"])
+            jobs = source.fetch()
+        assert jobs == []
+
+
+# ---------------------------------------------------------------------------
+# Lever tests
+# ---------------------------------------------------------------------------
+
+# createdAt is milliseconds since epoch; 1712750400000 ms = 2024-04-10T12:00:00+00:00
+LEVER_RESPONSE = [
+    {
+        "id": "abc-123",
+        "text": "Staff Software Engineer",
+        "categories": {
+            "location": "San Francisco, CA",
+            "team": "Infrastructure",
+        },
+        "description": "<h2>About the role</h2><p>Build <em>reliable</em> systems.</p>",
+        "hostedUrl": "https://jobs.lever.co/cloudflare/abc-123",
+        "createdAt": 1712750400000,
+    },
+    {
+        "id": "def-456",
+        "text": "Marketing Manager",
+        "categories": {
+            "location": "Austin, TX",
+            "team": "Marketing",
+        },
+        "description": "<p>Drive campaigns</p>",
+        "hostedUrl": "https://jobs.lever.co/cloudflare/def-456",
+        "createdAt": 1712836800000,
+    },
+]
+
+
+class TestLeverSource:
+    def test_fetch_maps_fields(self):
+        client = _mock_client(_mock_response(LEVER_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = LeverSource(companies=["cloudflare"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert len(jobs) == 2
+        job = jobs[0]
+        assert job.title == "Staff Software Engineer"
+        assert job.company == "cloudflare"
+        assert job.location == "San Francisco, CA"
+        assert "reliable" in job.description
+        assert "<em>" not in job.description  # HTML stripped
+        assert job.url == "https://jobs.lever.co/cloudflare/abc-123"
+        assert job.source == "lever"
+
+    def test_timestamp_ms_to_iso(self):
+        """createdAt in milliseconds should be converted to an ISO date string."""
+        client = _mock_client(_mock_response(LEVER_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = LeverSource(companies=["cloudflare"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert len(jobs) == 2
+        # posted_date should be a non-empty ISO string containing the date
+        posted = jobs[0].posted_date
+        assert posted != ""
+        assert "2024-04-10" in posted  # 1712750400000 ms → 2024-04-10
+
+    def test_empty_companies_returns_empty(self):
+        source = LeverSource(companies=[])
+        jobs = source.fetch(query="engineer")
+        assert jobs == []
+
+    def test_query_filtering(self):
+        client = _mock_client(_mock_response(LEVER_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = LeverSource(companies=["cloudflare"])
+            jobs = source.fetch(query="engineer", limit=10)
+
+        assert len(jobs) == 1
+        assert "Engineer" in jobs[0].title
+
+    def test_404_returns_empty(self):
+        client = _mock_client(_mock_response({}, status_code=404))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = LeverSource(companies=["nonexistent"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_network_error_returns_empty(self):
+        client = _mock_client(None)
+        client.get.side_effect = httpx.ConnectError("refused")
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = LeverSource(companies=["cloudflare"])
+            jobs = source.fetch()
+        assert jobs == []
+
+
+# ---------------------------------------------------------------------------
+# Ashby tests
+# ---------------------------------------------------------------------------
+
+ASHBY_RESPONSE = {
+    "jobs": [
+        {
+            "id": "job-001",
+            "title": "Backend Engineer",
+            "location": "Remote (US)",
+            "descriptionHtml": "<p>Build <strong>scalable</strong> APIs.</p>",
+            "jobUrl": "https://jobs.ashbyhq.com/linear/job-001",
+            "publishedAt": "2026-04-12T00:00:00.000Z",
+            "employmentType": "FullTime",
+        },
+        {
+            "id": "job-002",
+            "title": "Design Lead",
+            "location": "San Francisco",
+            "descriptionHtml": "<p>Lead design systems.</p>",
+            "jobUrl": "https://jobs.ashbyhq.com/linear/job-002",
+            "publishedAt": "2026-04-13T00:00:00.000Z",
+            "employmentType": "FullTime",
+        },
+    ]
+}
+
+
+class TestAshbySource:
+    def test_fetch_maps_fields(self):
+        client = _mock_client(_mock_response(ASHBY_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = AshbySource(companies=["linear"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert len(jobs) == 2
+        job = jobs[0]
+        assert job.title == "Backend Engineer"
+        assert job.company == "linear"
+        assert job.location == "Remote (US)"
+        assert "scalable" in job.description
+        assert "<strong>" not in job.description  # HTML stripped
+        assert job.url == "https://jobs.ashbyhq.com/linear/job-001"
+        assert job.posted_date == "2026-04-12T00:00:00.000Z"
+        assert job.source == "ashby"
+
+    def test_employment_type_mapped(self):
+        client = _mock_client(_mock_response(ASHBY_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = AshbySource(companies=["linear"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert jobs[0].employment_type == "FullTime"
+
+    def test_empty_companies_returns_empty(self):
+        source = AshbySource(companies=[])
+        jobs = source.fetch()
+        assert jobs == []
+
+    def test_query_filtering(self):
+        client = _mock_client(_mock_response(ASHBY_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = AshbySource(companies=["linear"])
+            jobs = source.fetch(query="backend", limit=10)
+
+        assert len(jobs) == 1
+        assert jobs[0].title == "Backend Engineer"
+
+    def test_http_error_returns_empty(self):
+        client = _mock_client(_mock_response({}, status_code=500))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = AshbySource(companies=["linear"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_network_error_returns_empty(self):
+        client = _mock_client(None)
+        client.get.side_effect = httpx.ConnectError("refused")
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = AshbySource(companies=["linear"])
+            jobs = source.fetch()
+        assert jobs == []
+
+
+# ---------------------------------------------------------------------------
+# SmartRecruiters tests
+# ---------------------------------------------------------------------------
+
+SMARTRECRUITERS_RESPONSE = {
+    "content": [
+        {
+            "name": "Product Manager",
+            "location": {"city": "Austin", "country": "US"},
+            "company": {"name": "Acme Inc."},
+            "ref": "https://careers.smartrecruiters.com/AcmeInc/product-manager",
+            "releasedDate": "2026-04-14",
+        },
+        {
+            "name": "Data Scientist",
+            "location": {"city": "Remote", "country": ""},
+            "company": {"name": "Acme Inc."},
+            "ref": "https://careers.smartrecruiters.com/AcmeInc/data-scientist",
+            "releasedDate": "2026-04-15",
+        },
+    ]
+}
+
+
+class TestSmartRecruitersSource:
+    def test_fetch_maps_fields(self):
+        client = _mock_client(_mock_response(SMARTRECRUITERS_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = SmartRecruitersSource(companies=["AcmeInc"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert len(jobs) == 2
+        job = jobs[0]
+        assert job.title == "Product Manager"
+        assert job.company == "Acme Inc."
+        assert job.url == "https://careers.smartrecruiters.com/AcmeInc/product-manager"
+        assert job.posted_date == "2026-04-14"
+        assert job.source == "smartrecruiters"
+
+    def test_location_formatting_city_and_country(self):
+        """City and country should be joined with ', '."""
+        client = _mock_client(_mock_response(SMARTRECRUITERS_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = SmartRecruitersSource(companies=["AcmeInc"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert jobs[0].location == "Austin, US"
+
+    def test_location_formatting_city_only(self):
+        """When country is empty, location should be just the city (no trailing comma)."""
+        client = _mock_client(_mock_response(SMARTRECRUITERS_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = SmartRecruitersSource(companies=["AcmeInc"])
+            jobs = source.fetch(query="", limit=10)
+
+        # Second posting has empty country
+        assert jobs[1].location == "Remote"
+        assert not jobs[1].location.endswith(",")
+
+    def test_company_falls_back_to_company_id(self):
+        """If the nested company.name is missing, fall back to company_id."""
+        response = {
+            "content": [
+                {
+                    "name": "SRE Lead",
+                    "location": {"city": "NYC", "country": "US"},
+                    "company": {},
+                    "ref": "https://careers.smartrecruiters.com/Foo/sre-lead",
+                    "releasedDate": "2026-04-16",
+                }
+            ]
+        }
+        client = _mock_client(_mock_response(response))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = SmartRecruitersSource(companies=["Foo"])
+            jobs = source.fetch(query="", limit=10)
+
+        assert len(jobs) == 1
+        assert jobs[0].company == "Foo"
+
+    def test_empty_companies_returns_empty(self):
+        source = SmartRecruitersSource(companies=[])
+        jobs = source.fetch()
+        assert jobs == []
+
+    def test_query_filtering(self):
+        client = _mock_client(_mock_response(SMARTRECRUITERS_RESPONSE))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = SmartRecruitersSource(companies=["AcmeInc"])
+            jobs = source.fetch(query="data scientist", limit=10)
+
+        assert len(jobs) == 1
+        assert jobs[0].title == "Data Scientist"
+
+    def test_http_error_returns_empty(self):
+        client = _mock_client(_mock_response({}, status_code=500))
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = SmartRecruitersSource(companies=["AcmeInc"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_network_error_returns_empty(self):
+        client = _mock_client(None)
+        client.get.side_effect = httpx.ConnectError("refused")
+        with patch("sentinel.sources.httpx.Client", return_value=client):
+            source = SmartRecruitersSource(companies=["AcmeInc"])
+            jobs = source.fetch()
+        assert jobs == []
