@@ -27,7 +27,7 @@ def test_defaults(tmp_path):
     assert cfg.ai_enabled is True
     assert cfg.ai_model == "claude-haiku-4-5"
     assert cfg.ai_model_deep == "claude-sonnet-4-6"
-    assert cfg.api_key_env == "ANTHROPIC_API_KEY"
+    assert cfg.api_key_env == "AI_API_KEY"
     assert cfg.max_ai_calls_per_hour == 100
     assert cfg.rate_limit_rpm == 60
     assert cfg.cors_origins == ["http://localhost:3000"]

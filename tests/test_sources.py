@@ -261,6 +261,7 @@ class TestTheMuseSource:
 
     def test_malformed_json_returns_empty(self):
         resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 200
         resp.raise_for_status.return_value = None
         resp.json.side_effect = json.JSONDecodeError("bad", "", 0)
         client = _mock_client(resp)
@@ -342,6 +343,7 @@ class TestRemotiveSource:
 
     def test_malformed_json_returns_empty(self):
         resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 200
         resp.raise_for_status.return_value = None
         resp.json.side_effect = json.JSONDecodeError("bad", "", 0)
         client = _mock_client(resp)
