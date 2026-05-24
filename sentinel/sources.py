@@ -252,21 +252,26 @@ class TheMuseSource(JobSource):
         return "themuse"
 
     def fetch(self, query: str = "", location: str = "", limit: int = 25) -> list[JobPosting]:
+        url = "https://www.themuse.com/api/public/jobs"
+        throttler = get_throttler()
+        if not throttler.wait_if_needed(url):
+            logger.warning("Circuit broken for %s, skipping", url)
+            return []
+
         params: dict[str, str | int] = {"page": 0}
         if query:
             params["category"] = query
 
+        resp = None
         try:
             with httpx.Client(timeout=_TIMEOUT) as client:
-                resp = client.get(
-                    "https://www.themuse.com/api/public/jobs",
-                    params=params,
-                    headers={"User-Agent": _USER_AGENT},
-                )
+                resp = client.get(url, params=params, headers={"User-Agent": _USER_AGENT})
                 resp.raise_for_status()
                 data = resp.json()
+            throttler.record_success(url)
         except Exception:
             logger.exception("TheMuse fetch failed")
+            throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
             return []
 
         results = data.get("results", [])
@@ -356,22 +361,27 @@ class USAJobsSource(JobSource):
         if location:
             params["LocationName"] = location
 
+        url = "https://data.usajobs.gov/api/search"
+        throttler = get_throttler()
+        if not throttler.wait_if_needed(url):
+            logger.warning("Circuit broken for %s, skipping", url)
+            return []
+
         headers = {
             "Authorization-Key": self._api_key,
             "User-Agent": self._email,
         }
 
+        resp = None
         try:
             with httpx.Client(timeout=_TIMEOUT) as client:
-                resp = client.get(
-                    "https://data.usajobs.gov/api/search",
-                    params=params,
-                    headers=headers,
-                )
+                resp = client.get(url, params=params, headers=headers)
                 resp.raise_for_status()
                 data = resp.json()
+            throttler.record_success(url)
         except Exception:
             logger.exception("USAJobs fetch failed")
+            throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
             return []
 
         search_result = data.get("SearchResult", {})
@@ -445,21 +455,26 @@ class RemotiveSource(JobSource):
         return "remotive"
 
     def fetch(self, query: str = "", location: str = "", limit: int = 25) -> list[JobPosting]:
+        url = "https://remotive.com/api/remote-jobs"
+        throttler = get_throttler()
+        if not throttler.wait_if_needed(url):
+            logger.warning("Circuit broken for %s, skipping", url)
+            return []
+
         params: dict[str, str | int] = {"limit": limit}
         if query:
             params["search"] = query
 
+        resp = None
         try:
             with httpx.Client(timeout=_TIMEOUT) as client:
-                resp = client.get(
-                    "https://remotive.com/api/remote-jobs",
-                    params=params,
-                    headers={"User-Agent": _USER_AGENT},
-                )
+                resp = client.get(url, params=params, headers={"User-Agent": _USER_AGENT})
                 resp.raise_for_status()
                 data = resp.json()
+            throttler.record_success(url)
         except Exception:
             logger.exception("Remotive fetch failed")
+            throttler.record_error(url, status_code=resp.status_code if resp is not None else None)
             return []
 
         results = data.get("jobs", [])

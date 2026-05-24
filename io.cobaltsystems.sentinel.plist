@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.cobaltsystems.sentinel</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ops/dev/sentinel/.venv/bin/sentinel</string>
+        <string>daemon</string>
+        <string>--interval</string>
+        <string>3600</string>
+        <string>--max-cycles</string>
+        <string>0</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ops/dev/sentinel</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ops/.config/sentinel/logs/sentinel.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/ops/.config/sentinel/logs/sentinel.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/ops/dev/sentinel/.venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

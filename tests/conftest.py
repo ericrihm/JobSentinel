@@ -2,6 +2,7 @@
 
 import pytest
 
+import sentinel.sources as _sources_mod
 from sentinel.models import JobPosting
 from sentinel.db import SentinelDB
 from sentinel.knowledge import KnowledgeBase
@@ -16,6 +17,19 @@ def _reset_risk_thresholds():
     """Restore risk thresholds after each test to prevent cross-test pollution."""
     yield
     _RISK_THRESHOLDS.update(_DEFAULT_THRESHOLDS)
+
+
+@pytest.fixture(autouse=True)
+def _reset_sources_throttler():
+    """Reset the module-level SmartThrottler singleton in sentinel.sources between tests.
+
+    Without this, accumulated error counts and last_request_time values from one
+    test bleed into the next, causing spurious time.sleep() calls and flaky
+    circuit-breaker state in source adapter tests.
+    """
+    _sources_mod._throttler = None
+    yield
+    _sources_mod._throttler = None
 
 
 @pytest.fixture

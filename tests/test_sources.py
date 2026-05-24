@@ -789,3 +789,135 @@ class TestSmartRecruitersSource:
             source = SmartRecruitersSource(companies=["AcmeInc"])
             jobs = source.fetch()
         assert jobs == []
+
+
+# ---------------------------------------------------------------------------
+# Circuit-breaker integration tests
+# ---------------------------------------------------------------------------
+#
+# Every source adapter calls get_throttler().wait_if_needed(url) before each
+# HTTP request.  When the circuit is open (wait_if_needed returns False) the
+# adapter must short-circuit without hitting the network.  For multi-company
+# adapters, a broken circuit for one company must not block other companies.
+# ---------------------------------------------------------------------------
+
+def _broken_throttler():
+    """Return a mock throttler whose circuit is always open."""
+    mock = MagicMock()
+    mock.wait_if_needed.return_value = False
+    return mock
+
+
+def _selective_throttler(blocked_substring: str):
+    """Return a mock throttler open only for URLs containing *blocked_substring*."""
+    mock = MagicMock()
+    mock.wait_if_needed.side_effect = lambda url: blocked_substring not in url
+    return mock
+
+
+class TestCircuitBreakerIntegration:
+    """Verify that a broken circuit short-circuits each adapter before any I/O."""
+
+    # --- single-URL adapters ---
+
+    def test_remoteok_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            jobs = RemoteOKSource().fetch()
+        assert jobs == []
+
+    def test_adzuna_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            source = AdzunaSource(app_id="id", app_key="key")
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_themuse_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            jobs = TheMuseSource().fetch()
+        assert jobs == []
+
+    def test_usajobs_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            source = USAJobsSource(api_key="k", email="e@e.com")
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_remotive_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            jobs = RemotiveSource().fetch()
+        assert jobs == []
+
+    # --- multi-company adapters: broken circuit must not make HTTP calls ---
+
+    def test_greenhouse_all_companies_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            source = GreenhouseSource(companies=["acme", "beta"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_lever_all_companies_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            source = LeverSource(companies=["cloudflare", "twitch"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_ashby_all_companies_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            source = AshbySource(companies=["linear", "arc"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    def test_smartrecruiters_all_companies_circuit_broken_returns_empty(self):
+        with patch("sentinel.sources.get_throttler", return_value=_broken_throttler()):
+            source = SmartRecruitersSource(companies=["AcmeInc", "BetaCo"])
+            jobs = source.fetch()
+        assert jobs == []
+
+    # --- partial circuit break: only one company blocked, other fetches fine ---
+
+    def test_greenhouse_partial_circuit_break_still_fetches_unblocked_company(self):
+        """Circuit open for 'blocked-co', circuit closed for 'open-co'."""
+        client = _mock_client(_mock_response(GREENHOUSE_RESPONSE))
+        throttler = _selective_throttler("blocked-co")
+        with patch("sentinel.sources.get_throttler", return_value=throttler):
+            with patch("sentinel.sources.httpx.Client", return_value=client):
+                source = GreenhouseSource(companies=["blocked-co", "open-co"])
+                jobs = source.fetch(query="")
+
+        # open-co's two jobs should be returned; blocked-co was skipped
+        assert len(jobs) == 2
+        assert all(j.company == "open-co" for j in jobs)
+
+    def test_lever_partial_circuit_break_still_fetches_unblocked_company(self):
+        client = _mock_client(_mock_response(LEVER_RESPONSE))
+        throttler = _selective_throttler("blocked-slug")
+        with patch("sentinel.sources.get_throttler", return_value=throttler):
+            with patch("sentinel.sources.httpx.Client", return_value=client):
+                source = LeverSource(companies=["blocked-slug", "open-slug"])
+                jobs = source.fetch(query="")
+
+        assert len(jobs) == 2
+        assert all(j.company == "open-slug" for j in jobs)
+
+    def test_ashby_partial_circuit_break_still_fetches_unblocked_company(self):
+        client = _mock_client(_mock_response(ASHBY_RESPONSE))
+        throttler = _selective_throttler("blocked-board")
+        with patch("sentinel.sources.get_throttler", return_value=throttler):
+            with patch("sentinel.sources.httpx.Client", return_value=client):
+                source = AshbySource(companies=["blocked-board", "open-board"])
+                jobs = source.fetch(query="")
+
+        assert len(jobs) == 2
+        assert all(j.company == "open-board" for j in jobs)
+
+    def test_smartrecruiters_partial_circuit_break_still_fetches_unblocked_company(self):
+        client = _mock_client(_mock_response(SMARTRECRUITERS_RESPONSE))
+        throttler = _selective_throttler("BlockedCo")
+        with patch("sentinel.sources.get_throttler", return_value=throttler):
+            with patch("sentinel.sources.httpx.Client", return_value=client):
+                source = SmartRecruitersSource(companies=["BlockedCo", "OpenCo"])
+                jobs = source.fetch(query="")
+
+        assert len(jobs) == 2
+        # jobs come from the OpenCo response (SmartRecruiters uses nested company.name)
+        assert all(j.company in ("Acme Inc.", "OpenCo") for j in jobs)
