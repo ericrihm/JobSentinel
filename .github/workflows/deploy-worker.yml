@@ -11,6 +11,10 @@ concurrency:
   group: deploy-worker
   cancel-in-progress: true
 
+# Deploy uses the Cloudflare API token (not GITHUB_TOKEN); only repo read is needed.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Deploy worker

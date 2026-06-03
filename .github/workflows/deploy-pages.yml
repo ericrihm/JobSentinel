@@ -7,10 +7,9 @@ on:
       - "docs/**"
   workflow_dispatch:
 
+# Default read-only; only the deploy job gets pages/id-token write (scoped below).
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Allow only one concurrent deployment; cancel in-flight deployments.
 concurrency:
@@ -50,6 +49,10 @@ jobs:
     name: Deploy to GitHub Pages
     needs: build
     runs-on: ubuntu-latest
+    # Only the deploy job needs to publish Pages and mint an OIDC token.
+    permissions:
+      pages: write
+      id-token: write
 
     environment:
       name: github-pages

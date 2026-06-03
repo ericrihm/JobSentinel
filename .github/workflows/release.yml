@@ -5,9 +5,9 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]*"
 
+# Default read-only; publish-pypi and github-release escalate per-job below.
 permissions:
-  contents: write
-  id-token: write   # required for PyPI trusted publishing
+  contents: read
 
 jobs:
   # -----------------------------------------------------------------------
@@ -116,6 +116,9 @@ jobs:
     name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # PyPI OIDC trusted publishing
     environment: pypi   # Configure this environment in repo Settings → Environments
     if: "!contains(github.ref_name, '-dev') && !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-rc')"
 
@@ -127,7 +130,7 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b54e755450e7d4b840b0e27b # release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         # Uses OIDC trusted publishing — no API token needed when the
         # "pypi" environment is configured in repo Settings.
         # See: https://docs.pypi.org/trusted-publishers/
@@ -139,6 +142,8 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release and upload assets
 
     steps:
       - name: Checkout repository (full history for changelog)

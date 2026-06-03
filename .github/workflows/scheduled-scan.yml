@@ -21,7 +21,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   SCAN_QUERY: ${{ github.event.inputs.query || 'software engineer' }}
@@ -33,6 +33,9 @@ jobs:
     name: Fetch & Score Job Postings
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Scoped here (not workflow-level): this job commits scan results back to the repo.
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
